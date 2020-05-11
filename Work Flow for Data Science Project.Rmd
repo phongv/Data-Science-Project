@@ -1,0 +1,244 @@
+---
+title: "Work Flow Data Science Project"
+author: "Dat Quoc Vuong"
+date: "5/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Package
+
+```{r}
+library(tidyverse)
+library(quanteda)
+library(tidytext)
+library(tm)
+library(caret)
+library(readtext)
+library(tokenizers)
+library(lubridate)
+library(quanteda.dictionaries)
+library(qdapRegex)
+library(topicmodels)
+library(textmineR)
+library(stm)
+pacman::p_load("furrr")
+```
+
+
+# Flow 1 - Load + Clean data
+
+## Reddit
+
+```{r}
+Reddit_Comment <- read_csv("Reddit Comment - CoronavirusUS - April 20.csv")
+
+# Detect and remove NA
+Reddit_Comment_column <- map_dbl(Reddit_Comment, function(x){
+  sum(is.na(x))
+}) %>%
+  as.data.frame() %>%
+  rownames_to_column() %>%
+  `names<-`(., c("Name", "Evaluate")) %>%
+  filter(Evaluate < 200) %>%
+  .[1] %>%
+  unlist(use.names = FALSE) %>%
+  as.vector()
+
+# Clean the data by remove observation with lower than 5 words
+
+reddit_data <- Reddit_Comment %>%
+  mutate(comment_day = as_datetime(created_utc),
+         retrieved_on = as_datetime(retrieved_on),
+         comments = body) %>%
+  filter(!str_detect(comments, "^\\[[:lower:]+\\]$")) %>%
+  filter(str_count(comments, pattern = boundary("word")) > 8) %>%
+  mutate(comments = rm_url(comments, clean = T)) %>%
+  mutate(comments = str_remove_all(comments, "^gt "), Week = isoweek(comment_day)) %>%
+  select(comments, Week)
+
+```
+
+# Flow 2 - Copus - Token
+
+## Reddit
+
+### Create a copus 
+
+```{r}
+
+corpus_reddit_data <- corpus(reddit_data, text_field = c("comments"), unique_docnames = F) %>%
+  `docnames<-`(reddit_data$Week)
+
+```
+
+### Stop Words & Base formed words
+
+```{r}
+
+stopwords_extended <- readLines("stopwords_en.txt", encoding = "UTF-8")
+
+lemma_data <- read.csv("baseform_en.tsv", encoding = "UTF-8")
+```
+
+
+### Create Token
+
+```{r}
+
+Token_reddit_data <- corpus_reddit_data %>% 
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE, remove_url = TRUE, remove_separators = TRUE) %>% 
+  tokens_tolower(keep_acronyms = TRUE) %>%
+  tokens_remove(pattern = c("subreddit", "subredditmessagecomposetorcoronavirusus", "652000", "discussion", "thread", "subreddits", "people")) %>%
+  tokens_replace(lemma_data$inflected_form, lemma_data$lemma, valuetype = "glob") %>% 
+  tokens_remove(pattern = stopwords_extended, padding = T)
+
+```
+
+
+### Collocations - Multi-word tokenization
+
+```{r}
+
+Collocations_reddit_data <- textstat_collocations(Token_reddit_data, min_count = 50)
+
+Collocations_tokens <- tokens_compound(Token_reddit_data, Collocations_reddit_data)
+
+```
+
+
+### Keep Top features
+
+We keep only the top 5% of the most frequent features (min_termfreq = 0.95) that appear in less than 10% of all documents (max_docfreq = 0.1) using dfm_trim() to focus on common but distinguishing features.
+
+```{r}
+
+Collocations_DFM <- Collocations_tokens %>% 
+  tokens_remove("") %>%
+  dfm() %>%
+  dfm_trim(min_termfreq = 0.95, termfreq_type = "quantile", 
+           max_docfreq = 0.1, docfreq_type = "prop")
+
+# We remove the token = 0
+
+Collocations_DFM <- Collocations_DFM[ntoken(Collocations_DFM) > 0,]
+```
+
+
+# Flow 3 - STM Topic Modeling
+
+## Convert object to stm
+
+Convert dfm to stm model. 
+
+```{r}
+
+stm <- convert(Collocations_DFM, to = "stm")
+
+```
+
+
+## Choosing `k` by parameter tunning
+
+`https://juliasilge.com/blog/evaluating-stm/`
+
+*Parallel processing*
+
+```{r}
+library(stm)
+library(furrr)
+plan(multiprocess)
+
+many_models <- data_frame(K = c(7,8)) %>%
+  mutate(topic_model = future_map(K, ~stm::stm(Collocations_DFM, K = .,
+                                               verbose = FALSE)))
+```
+
+
+*The model tunring*
+
+```{r}
+heldout <- make.heldout(Collocations_DFM)
+
+k_result <- many_models %>%
+  mutate(exclusivity = map(topic_model, exclusivity),
+         semantic_coherence = map(topic_model, semanticCoherence, Collocations_DFM),
+         eval_heldout = map(topic_model, eval.heldout, heldout$missing),
+         residual = map(topic_model, checkResiduals, Collocations_DFM),
+         bound =  map_dbl(topic_model, function(x) max(x$convergence$bound)),
+         lfact = map_dbl(topic_model, function(x) lfactorial(x$settings$dim$K)),
+         lbound = bound + lfact,
+         iterations = map_dbl(topic_model, function(x) length(x$convergence$bound)))
+
+k_result
+```
+
+We’re evaluating things like the residuals, the semantic coherence of the topics, the likelihood for held-out datasets, and more. We can make some diagnostic plots using these quantities to understand how the models are performing at various numbers of topics. The following code makes a diagnostic plot similar to one that comes built in to the stm package.
+
+```{r}
+k_result %>%
+  transmute(K,
+            `Lower bound` = lbound,
+            Residuals = map_dbl(residual, "dispersion"),
+            `Semantic coherence` = map_dbl(semantic_coherence, mean),
+            `Held-out likelihood` = map_dbl(eval_heldout, "expected.heldout")) %>%
+  gather(Metric, Value, -K) %>%
+  ggplot(aes(K, Value, color = Metric)) +
+  geom_line(size = 1.5, alpha = 0.7, show.legend = FALSE) +
+  facet_wrap(~Metric, scales = "free_y") +
+  labs(x = "K (number of topics)",
+       y = NULL,
+       title = "Model diagnostics by number of topics",
+       subtitle = "These diagnostics indicate that a good number of topics would be around 60")
+```
+
+
+The held-out likelihood is highest between 60 and 80, and the residuals are lowest around 60, so perhaps a good number of topics would be around there.
+
+Semantic coherence is maximized when the most probable words in a given topic frequently co-occur together, and it’s a metric that correlates well with human judgment of topic quality. Having high semantic coherence is relatively easy, though, if you only have a few topics dominated by very common words, so you want to look at both semantic coherence and exclusivity of words to topics. It’s a tradeoff. Read more about semantic coherence in the original paper about it.
+
+
+```{r}
+k_result %>%
+  select(K, exclusivity, semantic_coherence) %>%
+  filter(K %in% c(7,8)) %>%
+  unnest(cols = c(exclusivity, semantic_coherence)) %>%
+  mutate(K = as.factor(K)) %>%
+  ggplot(aes(semantic_coherence, exclusivity, color = K)) +
+  geom_point(size = 2, alpha = 0.7) +
+  labs(x = "Semantic coherence",
+       y = "Exclusivity",
+       title = "Comparing exclusivity and semantic coherence",
+       subtitle = "Models with fewer topics have higher semantic coherence for more topics, but lower exclusivity")
+```
+
+## Run `stm` with the given K
+
+`https://cran.r-project.org/web/packages/stm/vignettes/stmVignette.pdf`
+
+In the example below, we enter in the variables additively, by allowing for the week variable, an integer variable measuring which day the blog was posted, to have a non-linear relationship in the topic estimation stage.
+
+Additionally users can include more flexible functional forms of continuous covariates, including standard transforms like log(), as well as ns() or bs() from the splines package. The stm package also includes a convenience function s(), which selects a fairly flexible b-spline basis.
+
+The argument init.type allows the user to specify an initialization method. The default choice, "Spectral", provides a deterministic initialization using the spectral algorithm given in Arora et al 2014. See Roberts, Stewart and Tingley (2016) for details and a comparison of different approaches. Particularly when the number of documents is relatively large we highly recommend the Spectral algorithm which often performs extremely well.
+
+
+```{r}
+
+poliblogPrevFit <- stm(
+  documents = stm$documents, 
+  vocab = stm$vocab,
+  K = 20,
+  prevalence =~ s(Week),
+  data = stm$meta,
+  init.type = "Spectral")
+
+```
+
+
+
+
+
