@@ -152,7 +152,7 @@ library(stm)
 library(furrr)
 plan(multiprocess)
 
-many_models <- data_frame(K = c(7,8)) %>%
+many_models <- data_frame(K = c(10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
   mutate(topic_model = future_map(K, ~stm::stm(Collocations_DFM, K = .,
                                                verbose = FALSE)))
 ```
@@ -204,7 +204,7 @@ Semantic coherence is maximized when the most probable words in a given topic fr
 ```{r}
 k_result %>%
   select(K, exclusivity, semantic_coherence) %>%
-  filter(K %in% c(7,8)) %>%
+  filter(K %in% c(10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
   unnest(cols = c(exclusivity, semantic_coherence)) %>%
   mutate(K = as.factor(K)) %>%
   ggplot(aes(semantic_coherence, exclusivity, color = K)) +
@@ -237,6 +237,927 @@ poliblogPrevFit <- stm(
   init.type = "Spectral")
 
 ```
+
+
+## Listing top words for selected topics 
+
+`https://github.com/dondealban/learning-stm`
+
+`[For reference]` Listing top words for selected topics.
+
+```{r}
+
+labelTopics <- labelTopics(poliblogPrevFit, c(3,7,20))
+
+```
+
+
+## Show document contain the topic
+
+`https://github.com/dondealban/learning-stm`
+
+`[For reference]` Using findThoughts() function reads documents that are highly correlated with the user-specified topics. Object 'thoughts1' contains 3 documents about topic #3 and 'texts=shortdoc' gives just the first 250 words.
+
+```{r}
+
+thoughts3 <- findThoughts(poliblogPrevFit, texts=shortdoc, n=3, topics=3)$docs[[1]]
+plotQuote(thoughts3, width=40, main="Topic 3")
+
+```
+
+
+## Topic Quality
+
+`http://thomaselliott.me/pdfs/earl/topic_modeling.html`
+
+Check if the K we choose is good enough, the topic quality is based on these KPI
+
+`Semantic coherence` - empirical cooccurence of terms with high probability under a given topic. Given term l appears, what is the probability that term m will also appear? For the topic, coherence is the sum of the log of these probabilities.
+
+Semantic coherence is maximized when the most probable words in a given topic frequently co-occur together. Mimno et al. (2011) show that the metric correlates well with human judgment of topic quality. Formally, let D(v,v′) be the number of times that words v and v′ appear together in a document. Then for a list of the M most probable words in topic k, the semantic coherence for topic k is given as. In Roberts et al. (2014) we noted that attaining high semantic coherence was relatively easy by having a few topics dominated by very common words. We thus propose to measure topic quality through a combination of semantic coherence and exclusivity of words to topics.
+
+`Exclusivity` - top words for a topic are unlikely to appear in top words of other topics. Essentially the rate of a word in a topic divided by the sum of the rate of the word in all other topics.
+
+[This analysis give us a hint if topics are similar]
+
+
+```{r}
+
+topicQuality(model=poliblogPrevFit, documents=stm$documents)
+
+```
+
+
+## Correlations between topics
+
+`https://github.com/dondealban/learning-stm`
+
+Finally, for topicCorr() an STM permits correlations between topics. Positive correlations between topics indicate that both topics are likely to be discussed within a document. A graphical network display shows how closely related topics are to one another (i.e., how likely they are to appear in the same document). This function requires igraph R package.
+
+
+```{r}
+mod.out.corr <- topicCorr(poliblogPrevFit)
+plot(mod.out.corr)
+```
+
+
+## Interactive visualisation
+
+`https://github.com/dondealban/learning-stm`
+
+`[For reference]`
+
+Finally, the stmCorrViz() function for the package of the same name generates an interactive visualisation of topic hierarchy/correlations in a structural topicl model. The package performs a hierarchical clustering of topics that are then exported to a JSON object and visualised using D3.
+
+
+```{r}
+stmCorrViz(poliblogPrevFit, "stm-interactive-correlation.html", 
+           documents_raw=data$documents, documents_matrix=out$documents)
+```
+
+
+# Flow 4 - Co-occurrence analysis
+
+`Source: https://tm4ss.github.io/docs/Tutorial_5_Co-occurrence.html`
+
+## Reddit Network
+
+### Topic-specific dictionary
+
+```{r}
+
+Corona_words <- Token_reddit_data %>%
+  kwic(., pattern =  'corona*', window = 4) %>%
+  as.data.frame() %>%
+  distinct(keyword)
+
+covid <- Token_reddit_data %>%
+  kwic(., pattern =  'covid*', window = 4) %>%
+  as.data.frame() %>%
+  distinct(keyword)
+
+ncov <- Token_reddit_data %>%
+  kwic(., pattern =  'ncov*', window = 4) %>%
+  as.data.frame() %>%
+  distinct(keyword)
+
+Corona_Dictionary <- read_csv("Corona_Dictionary.csv") %>%
+  mutate(replace = "coronavirus")
+
+```
+
+### Load Token & Dictionary
+
+```{r}
+Corona_Dictionary <- read_csv("Corona_Dictionary2.csv")
+  
+
+Token_reddit_network <- corpus_reddit_data %>% 
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE, remove_url = TRUE, remove_separators = TRUE) %>% 
+  tokens_tolower(keep_acronyms = TRUE) %>%
+  tokens_replace(Corona_Dictionary$keyword, Corona_Dictionary$replace) %>% 
+  tokens_replace(lemma_data$inflected_form, lemma_data$lemma, valuetype = "glob") %>% 
+  tokens_remove(pattern = stopwords_extended, padding = T) %>%
+  tokens_remove(pattern = c("subreddit", "subredditmessagecomposetorcoronavirusus", 
+                            "652000", "discussion", "thread", "subreddits", "people",
+                            "gt"))
+
+```
+
+### Load the DFM into the data
+
+Again, we create a document-term-matrix. Only word forms which occur at least 10 times should be taken into account. An upper limit is not set (`Inf` = infinite).
+
+Additionally, we are interested in the joint occurrence of words in a sentence. For this, we do not need the exact count of how often the terms occur, but only the information whether they occur together or not. This can be encoded in a binary document-term-matrix. The parameter `weighting` in the control options calls the `weightBin` function. This writes a 1 into the DTM if the term is contained in a sentence and 0 if not.
+
+```{r}
+# calculate multi-word unit candidates
+Redit_collocations <- textstat_collocations(Token_reddit_network, min_count = 50)
+
+Redit_collocations <- tokens_compound(Token_reddit_network, Redit_collocations)
+
+minimumFrequency <- 10
+
+Reddit_binDTM <- Redit_collocations %>% 
+  tokens_remove("") %>%
+  dfm() %>% 
+  dfm_trim(min_docfreq = minimumFrequency, max_docfreq = Inf) %>% 
+  dfm_weight("boolean")
+```
+
+### Counting co-occurrences
+
+The counting of the joint word occurrence is easily possible via a matrix multiplication `(https://en.wikipedia.org/wiki/Matrix_multiplication)` on the binary DTM. For this purpose, the transposed matrix (dimensions: nTypes x nDocs) is multiplied by the original matrix (nDocs x nTypes), which as a result encodes a term-term matrix (dimensions: nTypes x nTypes).
+
+```{r}
+# Matrix multiplication for cooccurrence counts
+
+Reddit_coocCounts <- t(Reddit_binDTM) %*% Reddit_binDTM
+
+```
+
+Let’s look at a snippet of the result. The matrix has nTerms rows and columns and is symmetric. Each cell contains the number of joint occurrences. In the diagonal, the frequencies of single occurrences of each term are encoded.
+
+```{r}
+as.matrix(coocCounts[202:205, 202:205])
+```
+
+Interprete as follows: agree appears together 7 times with opinion in the 62735 sentences of the SUTO addresses. agree alone occurs 310 times.
+
+### Statistical significance
+
+In order to not only count joint occurrence we have to determine their significance. Different significance-measures can be used. We need also various counts to calculate the significance of the joint occurrence of a term `i` (`coocTerm`) with any other term `j`: 
+
+  * `k` - Number of all context units in the corpus 
+  * `ki` - Number of occurrences of `coocTerm` 
+  * `kj` - Number of occurrences of comparison term `j` 
+  * `kij` - Number of joint occurrences of `coocTerm` and `j`
+
+These quantities can be calculated for any term `coocTerm` as follows:
+
+```{r}
+Reddit_coocTerm <- c("coronavirus")
+Reddit_k <- nrow(Reddit_binDTM)
+Reddit_ki <- sum(Reddit_binDTM[, Reddit_coocTerm])
+Reddit_kj <- colSums(Reddit_binDTM)
+names(Reddit_kj) <- colnames(Reddit_binDTM)
+Reddit_kij <- Reddit_coocCounts[Reddit_coocTerm, ]
+```
+
+
+An implementation in R for Mutual Information, Dice, and Log-Likelihood may look like this. At the end of each formula, the result is sorted so that the most significant co-occurrences are at the first ranks of the list.
+
+```{r}
+########## MI: log(Reddit_k*Reddit_kij / (Reddit_ki * Reddit_kj) ########
+mutualInformationSig <- log(Reddit_k * Reddit_kij / (Reddit_ki * Reddit_kj))
+mutualInformationSig <- mutualInformationSig[order(mutualInformationSig, decreasing = TRUE)]
+
+########## DICE: 2 X&Y / X + Y ##############
+dicesig <- 2 * Reddit_kij / (Reddit_ki + Reddit_kj)
+dicesig <- dicesig[order(dicesig, decreasing=TRUE)]
+
+########## Log Likelihood ###################
+logsig <- 2 * ((Reddit_k * log(Reddit_k)) - (Reddit_ki * log(Reddit_ki)) - (Reddit_kj * log(Reddit_kj)) + (Reddit_kij * log(Reddit_kij)) 
+               + (Reddit_k - Reddit_ki - Reddit_kj + Reddit_kij) * log(Reddit_k - Reddit_ki - Reddit_kj + Reddit_kij) 
+               + (Reddit_ki - Reddit_kij) * log(Reddit_ki - Reddit_kij) + (Reddit_kj - Reddit_kij) * log(Reddit_kj - Reddit_kij) 
+               - (Reddit_k - Reddit_ki) * log(Reddit_k - Reddit_ki) - (Reddit_k - Reddit_kj) * log(Reddit_k - Reddit_kj))
+
+
+logsig <- logsig[order(logsig, decreasing=T)]
+```
+
+The result of the four variants for the statistical extraction of co-occurrence terms is shown in a data frame below. It can be seen that frequency is a bad indicator of meaning constitution. Mutual information emphasizes rather rare events in the data. Dice and Log-likelihood yield very well interpretable contexts.
+
+```{r}
+# Put all significance statistics in one Data-Frame
+Reddit_resultOverView <- data.frame(
+  names(sort(Reddit_kij, decreasing=T)[1:10]), sort(Reddit_kij, decreasing=T)[1:10],
+  names(mutualInformationSig[1:10]), mutualInformationSig[1:10], 
+  names(dicesig[1:10]), dicesig[1:10], 
+  names(logsig[1:10]), logsig[1:10],
+  row.names = NULL)
+
+colnames(Reddit_resultOverView) <- c("Freq-terms", "Freq", "MI-terms", "MI", "Dice-Terms", "Dice", "LL-Terms", "LL")
+
+print(Reddit_resultOverView)
+```
+
+### Visualization of co-occurrence
+
+In the following, we create a network visualization of significant co-occurrences.
+
+For this, we provide the calculation of the co-occurrence significance measures, which we have just introduced, as single function in the file `calculateCoocStatistics.R`. This function can be imported into the current R-Session with the source command.
+
+
+```{r}
+# Read in the source code for the co-occurrence calculation
+source("calculateCoocStatistics.R")
+# Definition of a parameter for the representation of the co-occurrences of a concept
+numberOfCoocs <- 15
+# Determination of the term of which co-competitors are to be measured.
+Reddit_coocTerm <- "coronavirus"
+```
+
+We use the imported function `calculateCoocStatistics` to calculate the co-occurrences for the target term “coronavirus”.
+
+```{r}
+Reddit_coocs <- calculateCoocStatistics(Reddit_coocTerm, Reddit_binDTM, measure="LOGLIK")
+
+# Display the numberOfCoocs main terms
+print(Reddit_coocs[1:numberOfCoocs])
+```
+
+To acquire an extended semantic environment of the target term, ‘secondary co-occurrence’ terms can be computed for each co-occurrence term of the target term. This results in a graph that can be visualized with special layout algorithms (e.g. Force Directed Graph).
+
+Network graphs can be evaluated and visualized in R with the igraph-package. Any graph object can be created from a three-column data-frame. Each row in that data-frame is a triple. Each triple encodes an edge-information of two nodes (source, sink) and an edge-weight value.
+
+For a term co-occurrence network, each triple consists of the target word, a co-occurring word and the significance of their joint occurrence. We denote the values with from, to, sig.
+
+```{r}
+
+Reddit_resultGraph <- data.frame(from = character(), to = character(), sig = numeric(0))
+
+```
+
+The process of gathering the network for the target term runs in two steps. First, we obtain all significant co-occurrence terms for the target term. Second, we obtain all co-occurrences of the co-occurrence terms from step one.
+
+Intermediate results for each term are stored as temporary triples named `tmpGraph.` With the `rbind` command (“row bind”, used for concatenation of data-frames) all `tmpGraph` are appended to the complete network object stored in `resultGraph.`
+
+```{r}
+# The structure of the temporary graph object is equal to that of the Reddit_resultGraph
+Reddit_tmpGraph <- data.frame(from = character(), to = character(), sig = numeric(0))
+
+# Fill the data.frame to produce the correct number of lines
+Reddit_tmpGraph[1:numberOfCoocs, 3] <- Reddit_coocs[1:numberOfCoocs]
+# Entry of the search word into the first column in all lines
+Reddit_tmpGraph[, 1] <- Reddit_coocTerm
+# Entry of the co-occurrences into the second column of the respective line
+Reddit_tmpGraph[, 2] <- names(Reddit_coocs)[1:numberOfCoocs]
+# Set the significances
+Reddit_tmpGraph[, 3] <- Reddit_coocs[1:numberOfCoocs]
+
+# Attach the triples to Reddit_resultGraph
+Reddit_resultGraph <- rbind(Reddit_resultGraph, Reddit_tmpGraph)
+
+# Iteration over the most significant numberOfCoocs co-occurrences of the search term
+for (i in 1:numberOfCoocs){
+  
+  # Calling up the co-occurrence calculation for term i from the search words co-occurrences
+  newReddit_coocTerm <- names(Reddit_coocs)[i]
+  Reddit_coocs2 <- calculateCoocStatistics(newReddit_coocTerm, Reddit_binDTM, measure="LOGLIK")
+  
+  #print the co-occurrences
+  Reddit_coocs2[1:10]
+  
+  # Structure of the temporary graph object
+  Reddit_tmpGraph <- data.frame(from = character(), to = character(), sig = numeric(0))
+  Reddit_tmpGraph[1:numberOfCoocs, 3] <- Reddit_coocs2[1:numberOfCoocs]
+  Reddit_tmpGraph[, 1] <- newReddit_coocTerm
+  Reddit_tmpGraph[, 2] <- names(Reddit_coocs2)[1:numberOfCoocs]
+  Reddit_tmpGraph[, 3] <- Reddit_coocs2[1:numberOfCoocs]
+  
+  #Append the result to the result graph
+  Reddit_resultGraph <- rbind(Reddit_resultGraph, Reddit_tmpGraph[2:length(Reddit_tmpGraph[, 1]), ])
+}
+```
+
+As a result, resultGraph now contains all numberOfCoocs * numberOfCoocs edges of a term co-occurrence network.
+
+### Visualization 
+
+The package iGraph offers multiple graph visualizations for graph objects. Graph objects can be created from triple lists, such as those we just generated. In the next step we load the package iGraph and create a visualization of all nodes and edges from the object resultGraph.
+
+```{r}
+require(igraph)
+
+# Set the graph and type
+Reddit_graphNetwork <- graph.data.frame(Reddit_resultGraph, directed = F)
+
+# Identification of all nodes with less than 2 edges
+Reddit_graphVs <- V(Reddit_graphNetwork)[degree(Reddit_graphNetwork) < 2]
+# These edges are removed from the graph
+Reddit_graphNetwork <- delete.vertices(Reddit_graphNetwork, Reddit_graphVs) 
+
+# Assign colors to edges and nodes (searchterm blue, rest orange)
+V(Reddit_graphNetwork)$color <- ifelse(V(Reddit_graphNetwork)$name == Reddit_coocTerm, 'cornflowerblue', 'orange') 
+
+# Edges with a significance of at least 50% of the maximum sig- nificance in the graph are drawn in orange
+Reddit_halfMaxSig <- max(E(Reddit_graphNetwork)$sig) * 0.5
+E(Reddit_graphNetwork)$color <- ifelse(E(Reddit_graphNetwork)$sig > Reddit_halfMaxSig, "coral", "azure3")
+
+# Disable edges with radius
+E(Reddit_graphNetwork)$curved <- 0
+# Size the nodes by their degree of networking
+V(Reddit_graphNetwork)$size <- log(degree(Reddit_graphNetwork)) * 5
+
+# All nodes must be assigned a standard minimum-size
+V(Reddit_graphNetwork)$size[V(Reddit_graphNetwork)$size < 5] <- 4
+
+# edge thickness
+E(Reddit_graphNetwork)$width <- 1
+
+# Finaler Plot
+Reddit_network <- toVisNetworkData(Reddit_graphNetwork)
+visNetwork(nodes = Reddit_network$nodes %>% 
+             mutate(font.size = if_else(id == "coronavirus",25,15)),
+           
+           edges = Reddit_network$edges %>% 
+             mutate(color = NA), 
+           
+           main = "Corona keyword Co-occurrence", 
+           height = "900px", 
+           width = "900px") %>%
+  visPhysics(solver = "forceAtlas2Based", forceAtlas2Based = list(gravitationalConstant = -20)) %>%
+  visInteraction(dragNodes = TRUE, 
+                 dragView = T, 
+                 zoomView = TRUE,
+                 hideEdgesOnDrag = TRUE)
+
+  
+# visSave(file = "network.html")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## News Network
+
+### Load Token & Dictionary
+
+```{r}
+Corona_Dictionary <- read_csv("Corona_Dictionary2.csv")
+  
+
+Token_News_network <- corpus_News_data %>% 
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE, remove_url = TRUE, remove_separators = TRUE) %>% 
+  tokens_tolower(keep_acronyms = TRUE) %>%
+  tokens_replace(Corona_Dictionary$keyword, Corona_Dictionary$replace) %>% 
+  tokens_replace(lemma_data$inflected_form, lemma_data$lemma, valuetype = "glob") %>% 
+  tokens_remove(pattern = stopwords_extended, padding = T) %>%
+  tokens_remove(pattern = c("subNews", "subNewsmessagecomposetorcoronavirusus", 
+                            "652000", "discussion", "thread", "subNewss", "people",
+                            "gt"))
+
+```
+
+### Load the DFM into the data
+
+Again, we create a document-term-matrix. Only word forms which occur at least 10 times should be taken into account. An upper limit is not set (`Inf` = infinite).
+
+Additionally, we are interested in the joint occurrence of words in a sentence. For this, we do not need the exact count of how often the terms occur, but only the information whether they occur together or not. This can be encoded in a binary document-term-matrix. The parameter `weighting` in the control options calls the `weightBin` function. This writes a 1 into the DTM if the term is contained in a sentence and 0 if not.
+
+```{r}
+# calculate multi-word unit candidates
+Redit_collocations <- textstat_collocations(Token_News_network, min_count = 50)
+
+Redit_collocations <- tokens_compound(Token_News_network, Redit_collocations)
+
+minimumFrequency <- 10
+
+News_binDTM <- Redit_collocations %>% 
+  tokens_remove("") %>%
+  dfm() %>% 
+  dfm_trim(min_docfreq = minimumFrequency, max_docfreq = Inf) %>% 
+  dfm_weight("boolean")
+```
+
+### Counting co-occurrences
+
+The counting of the joint word occurrence is easily possible via a matrix multiplication `(https://en.wikipedia.org/wiki/Matrix_multiplication)` on the binary DTM. For this purpose, the transposed matrix (dimensions: nTypes x nDocs) is multiplied by the original matrix (nDocs x nTypes), which as a result encodes a term-term matrix (dimensions: nTypes x nTypes).
+
+```{r}
+# Matrix multiplication for cooccurrence counts
+
+News_coocCounts <- t(News_binDTM) %*% News_binDTM
+
+```
+
+Let’s look at a snippet of the result. The matrix has nTerms rows and columns and is symmetric. Each cell contains the number of joint occurrences. In the diagonal, the frequencies of single occurrences of each term are encoded.
+
+```{r}
+as.matrix(coocCounts[202:205, 202:205])
+```
+
+Interprete as follows: agree appears together 7 times with opinion in the 62735 sentences of the SUTO addresses. agree alone occurs 310 times.
+
+### Statistical significance
+
+In order to not only count joint occurrence we have to determine their significance. Different significance-measures can be used. We need also various counts to calculate the significance of the joint occurrence of a term `i` (`coocTerm`) with any other term `j`: 
+
+  * `k` - Number of all context units in the corpus 
+  * `ki` - Number of occurrences of `coocTerm` 
+  * `kj` - Number of occurrences of comparison term `j` 
+  * `kij` - Number of joint occurrences of `coocTerm` and `j`
+
+These quantities can be calculated for any term `coocTerm` as follows:
+
+```{r}
+News_coocTerm <- c("coronavirus")
+News_k <- nrow(News_binDTM)
+News_ki <- sum(News_binDTM[, News_coocTerm])
+News_kj <- colSums(News_binDTM)
+names(News_kj) <- colnames(News_binDTM)
+News_kij <- News_coocCounts[News_coocTerm, ]
+```
+
+
+An implementation in R for Mutual Information, Dice, and Log-Likelihood may look like this. At the end of each formula, the result is sorted so that the most significant co-occurrences are at the first ranks of the list.
+
+```{r}
+########## MI: log(News_k*News_kij / (News_ki * News_kj) ########
+mutualInformationSig <- log(News_k * News_kij / (News_ki * News_kj))
+mutualInformationSig <- mutualInformationSig[order(mutualInformationSig, decreasing = TRUE)]
+
+########## DICE: 2 X&Y / X + Y ##############
+dicesig <- 2 * News_kij / (News_ki + News_kj)
+dicesig <- dicesig[order(dicesig, decreasing=TRUE)]
+
+########## Log Likelihood ###################
+logsig <- 2 * ((News_k * log(News_k)) - (News_ki * log(News_ki)) - (News_kj * log(News_kj)) + (News_kij * log(News_kij)) 
+               + (News_k - News_ki - News_kj + News_kij) * log(News_k - News_ki - News_kj + News_kij) 
+               + (News_ki - News_kij) * log(News_ki - News_kij) + (News_kj - News_kij) * log(News_kj - News_kij) 
+               - (News_k - News_ki) * log(News_k - News_ki) - (News_k - News_kj) * log(News_k - News_kj))
+
+
+logsig <- logsig[order(logsig, decreasing=T)]
+```
+
+The result of the four variants for the statistical extraction of co-occurrence terms is shown in a data frame below. It can be seen that frequency is a bad indicator of meaning constitution. Mutual information emphasizes rather rare events in the data. Dice and Log-likelihood yield very well interpretable contexts.
+
+```{r}
+# Put all significance statistics in one Data-Frame
+News_resultOverView <- data.frame(
+  names(sort(News_kij, decreasing=T)[1:10]), sort(News_kij, decreasing=T)[1:10],
+  names(mutualInformationSig[1:10]), mutualInformationSig[1:10], 
+  names(dicesig[1:10]), dicesig[1:10], 
+  names(logsig[1:10]), logsig[1:10],
+  row.names = NULL)
+
+colnames(News_resultOverView) <- c("Freq-terms", "Freq", "MI-terms", "MI", "Dice-Terms", "Dice", "LL-Terms", "LL")
+
+print(News_resultOverView)
+```
+
+### Visualization of co-occurrence
+
+In the following, we create a network visualization of significant co-occurrences.
+
+For this, we provide the calculation of the co-occurrence significance measures, which we have just introduced, as single function in the file `calculateCoocStatistics.R`. This function can be imported into the current R-Session with the source command.
+
+
+```{r}
+# Read in the source code for the co-occurrence calculation
+source("calculateCoocStatistics.R")
+# Definition of a parameter for the representation of the co-occurrences of a concept
+numberOfCoocs <- 15
+# Determination of the term of which co-competitors are to be measured.
+News_coocTerm <- "coronavirus"
+```
+
+We use the imported function `calculateCoocStatistics` to calculate the co-occurrences for the target term “coronavirus”.
+
+```{r}
+News_coocs <- calculateCoocStatistics(News_coocTerm, News_binDTM, measure="LOGLIK")
+
+# Display the numberOfCoocs main terms
+print(News_coocs[1:numberOfCoocs])
+```
+
+To acquire an extended semantic environment of the target term, ‘secondary co-occurrence’ terms can be computed for each co-occurrence term of the target term. This results in a graph that can be visualized with special layout algorithms (e.g. Force Directed Graph).
+
+Network graphs can be evaluated and visualized in R with the igraph-package. Any graph object can be created from a three-column data-frame. Each row in that data-frame is a triple. Each triple encodes an edge-information of two nodes (source, sink) and an edge-weight value.
+
+For a term co-occurrence network, each triple consists of the target word, a co-occurring word and the significance of their joint occurrence. We denote the values with from, to, sig.
+
+```{r}
+
+News_resultGraph <- data.frame(from = character(), to = character(), sig = numeric(0))
+
+```
+
+The process of gathering the network for the target term runs in two steps. First, we obtain all significant co-occurrence terms for the target term. Second, we obtain all co-occurrences of the co-occurrence terms from step one.
+
+Intermediate results for each term are stored as temporary triples named `tmpGraph.` With the `rbind` command (“row bind”, used for concatenation of data-frames) all `tmpGraph` are appended to the complete network object stored in `resultGraph.`
+
+```{r}
+# The structure of the temporary graph object is equal to that of the News_resultGraph
+News_tmpGraph <- data.frame(from = character(), to = character(), sig = numeric(0))
+
+# Fill the data.frame to produce the correct number of lines
+News_tmpGraph[1:numberOfCoocs, 3] <- News_coocs[1:numberOfCoocs]
+# Entry of the search word into the first column in all lines
+News_tmpGraph[, 1] <- News_coocTerm
+# Entry of the co-occurrences into the second column of the respective line
+News_tmpGraph[, 2] <- names(News_coocs)[1:numberOfCoocs]
+# Set the significances
+News_tmpGraph[, 3] <- News_coocs[1:numberOfCoocs]
+
+# Attach the triples to News_resultGraph
+News_resultGraph <- rbind(News_resultGraph, News_tmpGraph)
+
+# Iteration over the most significant numberOfCoocs co-occurrences of the search term
+for (i in 1:numberOfCoocs){
+  
+  # Calling up the co-occurrence calculation for term i from the search words co-occurrences
+  newNews_coocTerm <- names(News_coocs)[i]
+  News_coocs2 <- calculateCoocStatistics(newNews_coocTerm, News_binDTM, measure="LOGLIK")
+  
+  #print the co-occurrences
+  News_coocs2[1:10]
+  
+  # Structure of the temporary graph object
+  News_tmpGraph <- data.frame(from = character(), to = character(), sig = numeric(0))
+  News_tmpGraph[1:numberOfCoocs, 3] <- News_coocs2[1:numberOfCoocs]
+  News_tmpGraph[, 1] <- newNews_coocTerm
+  News_tmpGraph[, 2] <- names(News_coocs2)[1:numberOfCoocs]
+  News_tmpGraph[, 3] <- News_coocs2[1:numberOfCoocs]
+  
+  #Append the result to the result graph
+  News_resultGraph <- rbind(News_resultGraph, News_tmpGraph[2:length(News_tmpGraph[, 1]), ])
+}
+```
+
+As a result, resultGraph now contains all numberOfCoocs * numberOfCoocs edges of a term co-occurrence network.
+
+### Visualization 
+
+The package iGraph offers multiple graph visualizations for graph objects. Graph objects can be created from triple lists, such as those we just generated. In the next step we load the package iGraph and create a visualization of all nodes and edges from the object resultGraph.
+
+```{r}
+require(igraph)
+
+# Set the graph and type
+News_graphNetwork <- graph.data.frame(News_resultGraph, directed = F)
+
+# Identification of all nodes with less than 2 edges
+News_graphVs <- V(News_graphNetwork)[degree(News_graphNetwork) < 2]
+# These edges are removed from the graph
+News_graphNetwork <- delete.vertices(News_graphNetwork, News_graphVs) 
+
+# Assign colors to edges and nodes (searchterm blue, rest orange)
+V(News_graphNetwork)$color <- ifelse(V(News_graphNetwork)$name == News_coocTerm, 'cornflowerblue', 'orange') 
+
+# Edges with a significance of at least 50% of the maximum sig- nificance in the graph are drawn in orange
+News_halfMaxSig <- max(E(News_graphNetwork)$sig) * 0.5
+E(News_graphNetwork)$color <- ifelse(E(News_graphNetwork)$sig > News_halfMaxSig, "coral", "azure3")
+
+# Disable edges with radius
+E(News_graphNetwork)$curved <- 0
+# Size the nodes by their degree of networking
+V(News_graphNetwork)$size <- log(degree(News_graphNetwork)) * 5
+
+# All nodes must be assigned a standard minimum-size
+V(News_graphNetwork)$size[V(News_graphNetwork)$size < 5] <- 4
+
+# edge thickness
+E(News_graphNetwork)$width <- 1
+
+# Finaler Plot
+News_network <- toVisNetworkData(News_graphNetwork)
+visNetwork(nodes = News_network$nodes %>% 
+             mutate(font.size = if_else(id == "coronavirus",25,15)),
+           
+           edges = News_network$edges %>% 
+             mutate(color = NA), 
+           
+           main = "Corona keyword Co-occurrence", 
+           height = "900px", 
+           width = "900px") %>%
+  visPhysics(solver = "forceAtlas2Based", forceAtlas2Based = list(gravitationalConstant = -20)) %>%
+  visInteraction(dragNodes = TRUE, 
+                 dragView = T, 
+                 zoomView = TRUE,
+                 hideEdgesOnDrag = TRUE)
+
+  
+# visSave(file = "network.html")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Twitter Network
+
+### Load Token & Dictionary
+
+```{r}
+Corona_Dictionary <- read_csv("Corona_Dictionary2.csv")
+  
+
+Token_Twitter_network <- corpus_Twitter_data %>% 
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE, remove_url = TRUE, remove_separators = TRUE) %>% 
+  tokens_tolower(keep_acronyms = TRUE) %>%
+  tokens_replace(Corona_Dictionary$keyword, Corona_Dictionary$replace) %>% 
+  tokens_replace(lemma_data$inflected_form, lemma_data$lemma, valuetype = "glob") %>% 
+  tokens_remove(pattern = stopwords_extended, padding = T)
+
+```
+
+### Load the DFM into the data
+
+Again, we create a document-term-matrix. Only word forms which occur at least 10 times should be taken into account. An upper limit is not set (`Inf` = infinite).
+
+Additionally, we are interested in the joint occurrence of words in a sentence. For this, we do not need the exact count of how often the terms occur, but only the information whether they occur together or not. This can be encoded in a binary document-term-matrix. The parameter `weighting` in the control options calls the `weightBin` function. This writes a 1 into the DTM if the term is contained in a sentence and 0 if not.
+
+```{r}
+# calculate multi-word unit candidates
+Redit_collocations <- textstat_collocations(Token_Twitter_network, min_count = 50)
+
+Redit_collocations <- tokens_compound(Token_Twitter_network, Redit_collocations)
+
+minimumFrequency <- 10
+
+Twitter_binDTM <- Redit_collocations %>% 
+  tokens_remove("") %>%
+  dfm() %>% 
+  dfm_trim(min_docfreq = minimumFrequency, max_docfreq = Inf) %>% 
+  dfm_weight("boolean")
+```
+
+### Counting co-occurrences
+
+The counting of the joint word occurrence is easily possible via a matrix multiplication `(https://en.wikipedia.org/wiki/Matrix_multiplication)` on the binary DTM. For this purpose, the transposed matrix (dimensions: nTypes x nDocs) is multiplied by the original matrix (nDocs x nTypes), which as a result encodes a term-term matrix (dimensions: nTypes x nTypes).
+
+```{r}
+# Matrix multiplication for cooccurrence counts
+
+Twitter_coocCounts <- t(Twitter_binDTM) %*% Twitter_binDTM
+
+```
+
+Let’s look at a snippet of the result. The matrix has nTerms rows and columns and is symmetric. Each cell contains the number of joint occurrences. In the diagonal, the frequencies of single occurrences of each term are encoded.
+
+```{r}
+as.matrix(coocCounts[202:205, 202:205])
+```
+
+Interprete as follows: agree appears together 7 times with opinion in the 62735 sentences of the SUTO addresses. agree alone occurs 310 times.
+
+### Statistical significance
+
+In order to not only count joint occurrence we have to determine their significance. Different significance-measures can be used. We need also various counts to calculate the significance of the joint occurrence of a term `i` (`coocTerm`) with any other term `j`: 
+
+  * `k` - Number of all context units in the corpus 
+  * `ki` - Number of occurrences of `coocTerm` 
+  * `kj` - Number of occurrences of comparison term `j` 
+  * `kij` - Number of joint occurrences of `coocTerm` and `j`
+
+These quantities can be calculated for any term `coocTerm` as follows:
+
+```{r}
+Twitter_coocTerm <- c("coronavirus")
+Twitter_k <- nrow(Twitter_binDTM)
+Twitter_ki <- sum(Twitter_binDTM[, Twitter_coocTerm])
+Twitter_kj <- colSums(Twitter_binDTM)
+names(Twitter_kj) <- colnames(Twitter_binDTM)
+Twitter_kij <- Twitter_coocCounts[Twitter_coocTerm, ]
+```
+
+
+An implementation in R for Mutual Information, Dice, and Log-Likelihood may look like this. At the end of each formula, the result is sorted so that the most significant co-occurrences are at the first ranks of the list.
+
+```{r}
+########## MI: log(Twitter_k*Twitter_kij / (Twitter_ki * Twitter_kj) ########
+mutualInformationSig <- log(Twitter_k * Twitter_kij / (Twitter_ki * Twitter_kj))
+mutualInformationSig <- mutualInformationSig[order(mutualInformationSig, decreasing = TRUE)]
+
+########## DICE: 2 X&Y / X + Y ##############
+dicesig <- 2 * Twitter_kij / (Twitter_ki + Twitter_kj)
+dicesig <- dicesig[order(dicesig, decreasing=TRUE)]
+
+########## Log Likelihood ###################
+logsig <- 2 * ((Twitter_k * log(Twitter_k)) - (Twitter_ki * log(Twitter_ki)) - (Twitter_kj * log(Twitter_kj)) + (Twitter_kij * log(Twitter_kij)) 
+               + (Twitter_k - Twitter_ki - Twitter_kj + Twitter_kij) * log(Twitter_k - Twitter_ki - Twitter_kj + Twitter_kij) 
+               + (Twitter_ki - Twitter_kij) * log(Twitter_ki - Twitter_kij) + (Twitter_kj - Twitter_kij) * log(Twitter_kj - Twitter_kij) 
+               - (Twitter_k - Twitter_ki) * log(Twitter_k - Twitter_ki) - (Twitter_k - Twitter_kj) * log(Twitter_k - Twitter_kj))
+
+
+logsig <- logsig[order(logsig, decreasing=T)]
+```
+
+The result of the four variants for the statistical extraction of co-occurrence terms is shown in a data frame below. It can be seen that frequency is a bad indicator of meaning constitution. Mutual information emphasizes rather rare events in the data. Dice and Log-likelihood yield very well interpretable contexts.
+
+```{r}
+# Put all significance statistics in one Data-Frame
+Twitter_resultOverView <- data.frame(
+  names(sort(Twitter_kij, decreasing=T)[1:10]), sort(Twitter_kij, decreasing=T)[1:10],
+  names(mutualInformationSig[1:10]), mutualInformationSig[1:10], 
+  names(dicesig[1:10]), dicesig[1:10], 
+  names(logsig[1:10]), logsig[1:10],
+  row.names = NULL)
+
+colnames(Twitter_resultOverView) <- c("Freq-terms", "Freq", "MI-terms", "MI", "Dice-Terms", "Dice", "LL-Terms", "LL")
+
+print(Twitter_resultOverView)
+```
+
+### Visualization of co-occurrence
+
+In the following, we create a network visualization of significant co-occurrences.
+
+For this, we provide the calculation of the co-occurrence significance measures, which we have just introduced, as single function in the file `calculateCoocStatistics.R`. This function can be imported into the current R-Session with the source command.
+
+
+```{r}
+# Read in the source code for the co-occurrence calculation
+source("calculateCoocStatistics.R")
+# Definition of a parameter for the representation of the co-occurrences of a concept
+numberOfCoocs <- 15
+# Determination of the term of which co-competitors are to be measured.
+Twitter_coocTerm <- "coronavirus"
+```
+
+We use the imported function `calculateCoocStatistics` to calculate the co-occurrences for the target term “coronavirus”.
+
+```{r}
+Twitter_coocs <- calculateCoocStatistics(Twitter_coocTerm, Twitter_binDTM, measure="LOGLIK")
+
+# Display the numberOfCoocs main terms
+print(Twitter_coocs[1:numberOfCoocs])
+```
+
+To acquire an extended semantic environment of the target term, ‘secondary co-occurrence’ terms can be computed for each co-occurrence term of the target term. This results in a graph that can be visualized with special layout algorithms (e.g. Force Directed Graph).
+
+Network graphs can be evaluated and visualized in R with the igraph-package. Any graph object can be created from a three-column data-frame. Each row in that data-frame is a triple. Each triple encodes an edge-information of two nodes (source, sink) and an edge-weight value.
+
+For a term co-occurrence network, each triple consists of the target word, a co-occurring word and the significance of their joint occurrence. We denote the values with from, to, sig.
+
+```{r}
+
+Twitter_resultGraph <- data.frame(from = character(), to = character(), sig = numeric(0))
+
+```
+
+The process of gathering the network for the target term runs in two steps. First, we obtain all significant co-occurrence terms for the target term. Second, we obtain all co-occurrences of the co-occurrence terms from step one.
+
+Intermediate results for each term are stored as temporary triples named `tmpGraph.` With the `rbind` command (“row bind”, used for concatenation of data-frames) all `tmpGraph` are appended to the complete network object stored in `resultGraph.`
+
+```{r}
+# The structure of the temporary graph object is equal to that of the Twitter_resultGraph
+Twitter_tmpGraph <- data.frame(from = character(), to = character(), sig = numeric(0))
+
+# Fill the data.frame to produce the correct number of lines
+Twitter_tmpGraph[1:numberOfCoocs, 3] <- Twitter_coocs[1:numberOfCoocs]
+# Entry of the search word into the first column in all lines
+Twitter_tmpGraph[, 1] <- Twitter_coocTerm
+# Entry of the co-occurrences into the second column of the respective line
+Twitter_tmpGraph[, 2] <- names(Twitter_coocs)[1:numberOfCoocs]
+# Set the significances
+Twitter_tmpGraph[, 3] <- Twitter_coocs[1:numberOfCoocs]
+
+# Attach the triples to Twitter_resultGraph
+Twitter_resultGraph <- rbind(Twitter_resultGraph, Twitter_tmpGraph)
+
+# Iteration over the most significant numberOfCoocs co-occurrences of the search term
+for (i in 1:numberOfCoocs){
+  
+  # Calling up the co-occurrence calculation for term i from the search words co-occurrences
+  newTwitter_coocTerm <- names(Twitter_coocs)[i]
+  Twitter_coocs2 <- calculateCoocStatistics(newTwitter_coocTerm, Twitter_binDTM, measure="LOGLIK")
+  
+  #print the co-occurrences
+  Twitter_coocs2[1:10]
+  
+  # Structure of the temporary graph object
+  Twitter_tmpGraph <- data.frame(from = character(), to = character(), sig = numeric(0))
+  Twitter_tmpGraph[1:numberOfCoocs, 3] <- Twitter_coocs2[1:numberOfCoocs]
+  Twitter_tmpGraph[, 1] <- newTwitter_coocTerm
+  Twitter_tmpGraph[, 2] <- names(Twitter_coocs2)[1:numberOfCoocs]
+  Twitter_tmpGraph[, 3] <- Twitter_coocs2[1:numberOfCoocs]
+  
+  #Append the result to the result graph
+  Twitter_resultGraph <- rbind(Twitter_resultGraph, Twitter_tmpGraph[2:length(Twitter_tmpGraph[, 1]), ])
+}
+```
+
+As a result, resultGraph now contains all numberOfCoocs * numberOfCoocs edges of a term co-occurrence network.
+
+### Visualization 
+
+The package iGraph offers multiple graph visualizations for graph objects. Graph objects can be created from triple lists, such as those we just generated. In the next step we load the package iGraph and create a visualization of all nodes and edges from the object resultGraph.
+
+```{r}
+require(igraph)
+
+# Set the graph and type
+Twitter_graphNetwork <- graph.data.frame(Twitter_resultGraph, directed = F)
+
+# Identification of all nodes with less than 2 edges
+Twitter_graphVs <- V(Twitter_graphNetwork)[degree(Twitter_graphNetwork) < 2]
+# These edges are removed from the graph
+Twitter_graphNetwork <- delete.vertices(Twitter_graphNetwork, Twitter_graphVs) 
+
+# Assign colors to edges and nodes (searchterm blue, rest orange)
+V(Twitter_graphNetwork)$color <- ifelse(V(Twitter_graphNetwork)$name == Twitter_coocTerm, 'cornflowerblue', 'orange') 
+
+# Edges with a significance of at least 50% of the maximum sig- nificance in the graph are drawn in orange
+Twitter_halfMaxSig <- max(E(Twitter_graphNetwork)$sig) * 0.5
+E(Twitter_graphNetwork)$color <- ifelse(E(Twitter_graphNetwork)$sig > Twitter_halfMaxSig, "coral", "azure3")
+
+# Disable edges with radius
+E(Twitter_graphNetwork)$curved <- 0
+# Size the nodes by their degree of networking
+V(Twitter_graphNetwork)$size <- log(degree(Twitter_graphNetwork)) * 5
+
+# All nodes must be assigned a standard minimum-size
+V(Twitter_graphNetwork)$size[V(Twitter_graphNetwork)$size < 5] <- 4
+
+# edge thickness
+E(Twitter_graphNetwork)$width <- 1
+
+# Finaler Plot
+Twitter_network <- toVisNetworkData(Twitter_graphNetwork)
+visNetwork(nodes = Twitter_network$nodes %>% 
+             mutate(font.size = if_else(id == "coronavirus",25,15)),
+           
+           edges = Twitter_network$edges %>% 
+             mutate(color = NA), 
+           
+           main = "Corona keyword Co-occurrence", 
+           height = "900px", 
+           width = "900px") %>%
+  visPhysics(solver = "forceAtlas2Based", forceAtlas2Based = list(gravitationalConstant = -20)) %>%
+  visInteraction(dragNodes = TRUE, 
+                 dragView = T, 
+                 zoomView = TRUE,
+                 hideEdgesOnDrag = TRUE)
+
+  
+# visSave(file = "network.html")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
