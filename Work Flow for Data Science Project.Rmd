@@ -25,6 +25,7 @@ library(qdapRegex)
 library(topicmodels)
 library(textmineR)
 library(stm)
+library(stmCorrViz)
 pacman::p_load("furrr")
 ```
 
@@ -48,7 +49,7 @@ Reddit_Comment_column <- map_dbl(Reddit_Comment, function(x){
   unlist(use.names = FALSE) %>%
   as.vector()
 
-# Clean the data by remove observation with lower than 5 words
+# Clean the data by remove observation with lower than 9 words
 
 reddit_data <- Reddit_Comment %>%
   mutate(comment_day = as_datetime(created_utc),
@@ -57,21 +58,68 @@ reddit_data <- Reddit_Comment %>%
   filter(!str_detect(comments, "^\\[[:lower:]+\\]$")) %>%
   filter(str_count(comments, pattern = boundary("word")) > 8) %>%
   mutate(comments = rm_url(comments, clean = T)) %>%
-  mutate(comments = str_remove_all(comments, "^gt "), Week = isoweek(comment_day)) %>%
-  select(comments, Week)
+  mutate(comments = str_remove_all(comments, "^gt "), week = isoweek(comment_day)) %>%
+  select(comments, week)
 
 ```
 
-# Flow 2 - Copus - Token
+## News
+
+```{r}
+news_data <- read_csv("news_coronavirus.csv")
+
+# Add week and remove unnecessary column
+
+news_data <- news_data %>% 
+  mutate(week = isoweek(publish_date)) %>% 
+  select(-title)
+
+```
+
+## Twitter
+
+```{r}
+tweets <- read_csv("twitter_coronavirus.csv")
+
+# Transform the date column
+
+tweets_data <- tweets %>% 
+  separate(created_at, c("wday", "month", "day", "time", "plus", "year"), 
+           sep = " ") %>% 
+  mutate(date = paste(month, day, year, sep = " ")) %>% 
+  select(c("text", "date"))
+
+tweets_data$date <- as.Date(tweets_data$date, format = "%b %d %Y")
+tweets_data <- tweets_data %>% 
+  mutate(week = isoweek(date)) %>% 
+  filter(week > 2)
+
+# Clean hashtags, links and special characters
+
+tweets_data$text <- tweets_data$text %>% 
+  str_replace_all("#", " ") %>%
+  str_remove_all("(?<=^|\\s)http[^\\s]+") %>% 
+  str_remove_all("[^a-zA-Z0-9 ]") %>% 
+  trimws()
+
+# Remove blank text after cleaning
+
+tweets_data <- tweets_data %>% 
+  filter(str_count(text, pattern = boundary("word")) > 0)
+
+```
+
+
+# Flow 2 - Corpus - Token
 
 ## Reddit
 
-### Create a copus 
+### Create a corpus 
 
 ```{r}
 
 corpus_reddit_data <- corpus(reddit_data, text_field = c("comments"), unique_docnames = F) %>%
-  `docnames<-`(reddit_data$Week)
+  `docnames<-`(reddit_data$week)
 
 ```
 
@@ -82,10 +130,11 @@ corpus_reddit_data <- corpus(reddit_data, text_field = c("comments"), unique_doc
 stopwords_extended <- readLines("stopwords_en.txt", encoding = "UTF-8")
 
 lemma_data <- read.csv("baseform_en.tsv", encoding = "UTF-8")
+
 ```
 
 
-### Create Token
+### Create Tokens
 
 ```{r}
 
@@ -125,6 +174,122 @@ Collocations_DFM <- Collocations_tokens %>%
 # We remove the token = 0
 
 Collocations_DFM <- Collocations_DFM[ntoken(Collocations_DFM) > 0,]
+
+```
+
+
+## News
+
+### Create a corpus 
+
+```{r}
+
+corpus_news_data <- corpus(news_data, text_field = c("text"), 
+                           unique_docnames = F) %>%
+  `docnames<-`(news_data$week) # update the name of document in the copus
+
+```
+
+### Stop Words & Base formed words
+
+```{r}
+
+stopwords_extended <- readLines("stopwords_en.txt", encoding = "UTF-8")
+
+lemma_data <- read.csv("baseform_en.tsv", encoding = "UTF-8")
+
+```
+
+### Create Tokens
+
+```{r}
+
+Token_news_data <- corpus_news_data %>% 
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE, 
+         remove_url = TRUE, remove_separators = TRUE) %>% 
+  tokens_tolower(keep_acronyms = TRUE) %>%
+  tokens_remove(pattern = c("amid", "updates", "live", "video", "briefing")) %>%
+  tokens_replace(lemma_data$inflected_form, lemma_data$lemma, 
+                 valuetype = "glob") %>%
+  tokens_replace(pattern = c("covid-19", "ncov", "cov"), 
+                 c("coronavirus", "coronavirus", "coronavirus"),
+                 valuetype = "fixed") %>% 
+  tokens_remove(pattern = stopwords_extended, padding = T)
+
+```
+
+
+### Keep Top features
+
+We keep only the top 5% of the most frequent features (min_termfreq = 0.95) that appear in less than 10% of all documents (max_docfreq = 0.1) using dfm_trim() to focus on common but distinguishing features.
+
+```{r}
+
+Collocations_DFM <- Token_news_data %>% 
+  tokens_remove("") %>%
+  dfm() %>% 
+  dfm_trim(min_termfreq = 0.95, termfreq_type = "quantile",
+           max_docfreq = 0.1, docfreq_type = "prop")
+
+# We remove the token = 0
+
+news_DFM <- news_DFM[ntoken(news_DFM) > 0, ]
+#dim(news_DFM)
+
+```
+
+
+## Twitter
+
+### Create a corpus 
+
+```{r}
+
+corpus_tweets_data <- corpus(tweets_data, text_field = c("text"),
+                             unique_docnames = F) %>%
+  `docnames<-`(tweets_data$week)
+
+```
+
+### Stop Words & Base formed words
+
+```{r}
+
+stopwords_extended <- readLines("stopwords_en.txt", encoding = "UTF-8")
+
+lemma_data <- read.csv("baseform_en.tsv", encoding = "UTF-8")
+
+```
+
+### Create Tokens
+
+```{r}
+
+Token_tweets_data <- corpus_tweets_data %>% 
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE,
+         remove_url = TRUE, remove_separators = TRUE) %>% 
+  tokens_tolower(keep_acronyms = FALSE) %>%
+  tokens_remove(pattern = c("people")) %>%
+  tokens_replace(lemma_data$inflected_form, lemma_data$lemma, 
+                 valuetype = "glob") %>% 
+  tokens_remove(pattern = stopwords_extended, padding = T)
+
+```
+
+### Keep Top features
+
+```{r}
+
+Collocations_DFM <- Token_tweets_data %>% 
+  tokens_remove("") %>%
+  dfm() %>%
+  dfm_trim(min_termfreq = 0.95, termfreq_type = "quantile", 
+           max_docfreq = 0.1, docfreq_type = "prop")
+
+# We remove the token = 0
+
+Collocations_DFM <- Collocations_DFM[ntoken(Collocations_DFM) > 0,]
+
 ```
 
 
@@ -158,7 +323,7 @@ many_models <- data_frame(K = c(10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)
 ```
 
 
-*The model tunring*
+*The model tuning*
 
 ```{r}
 heldout <- make.heldout(Collocations_DFM)
@@ -232,7 +397,7 @@ poliblogPrevFit <- stm(
   documents = stm$documents, 
   vocab = stm$vocab,
   K = 20,
-  prevalence =~ s(Week),
+  prevalence =~ s(week),
   data = stm$meta,
   init.type = "Spectral")
 
@@ -260,8 +425,9 @@ labelTopics <- labelTopics(poliblogPrevFit, c(3,7,20))
 
 ```{r}
 
-thoughts3 <- findThoughts(poliblogPrevFit, texts=shortdoc, n=3, topics=3)$docs[[1]]
-plotQuote(thoughts3, width=40, main="Topic 3")
+thoughts3 <- findThoughts(poliblogPrevFit, texts = shortdoc, n = 3, 
+                          topics = 3)$docs[[1]]
+plotQuote(thoughts3, width = 40, main = "Topic 3")
 
 ```
 
@@ -312,7 +478,7 @@ Finally, the stmCorrViz() function for the package of the same name generates an
 
 ```{r}
 stmCorrViz(poliblogPrevFit, "stm-interactive-correlation.html", 
-           documents_raw=data$documents, documents_matrix=out$documents)
+           documents_raw = data$documents, documents_matrix = out$documents)
 ```
 
 
