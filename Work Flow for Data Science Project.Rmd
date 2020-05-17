@@ -1341,7 +1341,7 @@ Twitter_topic_model <- stm(
   documents = Twitter_stm$documents, 
   vocab = Twitter_stm$vocab,
   K = 20,
-  prevalence =~ s(Week),
+  prevalence =~ s(week),
   data = Twitter_stm$meta,
   init.type = "Spectral")
 
