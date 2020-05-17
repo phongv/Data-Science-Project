@@ -1,6 +1,5 @@
 ---
 title: "Work Flow Data Science Project"
-author: "Dat Quoc Vuong"
 date: "5/11/2020"
 output: html_document
 ---
@@ -1126,7 +1125,7 @@ Semantic coherence is maximized when the most probable words in a given topic fr
 ```{r}
 Reddit_k_result %>%
   select(K, exclusivity, semantic_coherence) %>%
-  filter(K %in% c(10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
+  filter(K %in% c(8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
   unnest(cols = c(exclusivity, semantic_coherence)) %>%
   mutate(K = as.factor(K)) %>%
   ggplot(aes(semantic_coherence, exclusivity, color = K)) +
@@ -1262,7 +1261,7 @@ library(stm)
 library(furrr)
 plan(multiprocess)
 
-Twitter_many_models <- data_frame(K = c(10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
+Twitter_many_models <- data_frame(K = c(8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
   mutate(topic_model = future_map(K, ~stm::stm(Twitter_DFM, K = .,
                                                verbose = FALSE)))
 ```
@@ -1314,7 +1313,7 @@ Semantic coherence is maximized when the most probable words in a given topic fr
 ```{r}
 Twitter_k_result %>%
   select(K, exclusivity, semantic_coherence) %>%
-  filter(K %in% c(10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
+  filter(K %in% c(8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
   unnest(cols = c(exclusivity, semantic_coherence)) %>%
   mutate(K = as.factor(K)) %>%
   ggplot(aes(semantic_coherence, exclusivity, color = K)) +
