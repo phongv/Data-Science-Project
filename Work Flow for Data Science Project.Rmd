@@ -11,23 +11,29 @@ knitr::opts_chunk$set(echo = TRUE)
 Package
 
 ```{r}
-library(tidyverse)
-library(quanteda)
-library(tidytext)
-library(tm)
-library(caret)
-library(readtext)
-library(tokenizers)
-library(lubridate)
-library(quanteda.dictionaries)
-library(qdapRegex)
-library(topicmodels)
-library(textmineR)
-library(stm)
+
+library(tidyverse) # data manipulation
+library(quanteda) # text pre-processing
+library(tidytext) # text analysis
+library(lubridate) # date function
+library(gridExtra) # multiple graphs
+library(ggrepel) # plot labels
+library(stm) # topic modelling
 library(stmCorrViz)
-pacman::p_load("furrr")
+library(furrr)
+library(tm)
+
 ```
 
+# Data Collection
+
+Using the keyword "coronavirus" for querying, we collected news articles published on news websites in the United States from the beginning of 2020, where the first cases of coronavirus were reported, until April 19, 2020. We used a third-party API called Currents API which generated data in JSON format. For sources, we looked at the top 15 U.S news websites measured by unique monthly visitors (Statista, 2020), excluding the news aggregators (Yahoo News, Google News) and topic-specific newspapers (The Wall Street Journal). The free version of the API, despite returning some useful features including Title, Date, Description and URL, did not allow us getting the full text of the articles. Therefore, we found a resolution by putting all the URLs available from the previous step into the newspaper3k module in Python, which enabled scraping the necessary text. Furthermore, after checking the data quality from each source, we narrowed them down to these 6 news outlets: CNN, The New York Times, Fox News, The Guardian, USA Today and The LA Times.
+
+For Reddit data, we searched for all comments from the subreddit CoronavirusUS from February when it was created until April 19, 2020. We used the pushshift.io Reddit API to build the URL with the relevant parameters which returned a page of JSON objects.
+
+In view of Twitter data, the standard API only allows search queries of up to 7 days which means that we cannot scrape data in the normal way for more historical data. However, thanks to the support from the team at crowdbreaks.org, who is tracking Twitter trend on COVID-19 in real time, we managed to get all tweet IDs that they had collected since January in the U.S. By creating a Python environment and executing the download command following their guidelines, we retrieved the tweets from the provided IDs, also in JSON format.
+
+We used both the jsonlite package in R and the json module in Python to extract key features from each JSON result, namely the date and text attributes. Unfortunately, because of Twitter's restriction allowing only 180 tweets every 15 minutes, we calculated a total download time of 15 days using 2 API keys we had. On that account, we decided to split the data in half by stratified sampling, keeping the distribution of number of tweets per week, in order to speed up data collection and obtain the data in time for the report. The Twitter data were collected until April 16, 2020.
 
 # Flow 1 - Load + Clean data
 
@@ -43,11 +49,11 @@ reddit_data <- read_rds("Reddit_Data.rds")
 
 ```{r}
 
-tweets <- read_csv("twitter_coronavirus.csv")
+tweets_data <- read_csv("twitter_coronavirus.csv")
 
 # Transform the date column
 
-tweets_data <- tweets %>% 
+tweets_data <- tweets_data %>% 
   separate(created_at, c("wday", "month", "day", "time", "plus", "year"), 
            sep = " ") %>% 
   mutate(date = paste(month, day, year, sep = " ")) %>% 
@@ -69,7 +75,7 @@ tweets_data$text <- tweets_data$text %>%
 # Remove blank text after cleaning
 
 tweets_data <- tweets_data %>% 
-  filter(str_count(text, pattern = boundary("word")) > 0)
+  filter(str_count(text, pattern = boundary("word")) > 1)
 ```
 
 
@@ -84,19 +90,84 @@ news_data <- read_csv("news_coronavirus.csv")
 news_data <- news_data %>% 
   mutate(week = isoweek(publish_date)) %>% 
   select(-title)
+
+```
+
+For data cleaning, we removed duplicated data, texts that were too short and kept only texts written in English. Consequently, 14,149 news articles, 352,842 Reddit comments and 109,329 tweets were ready for analysis. The data distribution can be seen in Figure 1. The number of news reported on COVID-19 in the U.S were relatively low in the first 6 weeks (week 3 - week 8), and the subreddit CoronavirusUS was not even created until week 7. However, there was a dramatic increase starting from week 9 and peaked in week 11, 12 and 13 for Twitter, Reddit and News respectively. This was the end of March when the number of infected cases in the country surged.
+
+```{r Data Distribution, eval=FALSE}
+
+plot_news <- news_data %>%
+  group_by(week) %>%
+  summarise(n = n()) %>% 
+  ungroup() %>% 
+  mutate(source = "News")
+
+plot_tweets <- tweets_data %>%
+  group_by(week) %>%
+  summarise(n = n()) %>% 
+  ungroup() %>% 
+  mutate(source = "Twitter")
+
+plot_reddit <- reddit_data %>%
+  group_by(week) %>%
+  summarise(n = n()) %>% 
+  ungroup() %>% 
+  mutate(source = "Reddit")
+
+news_distribution <- plot_news %>%
+  ggplot(aes(x = week)) + 
+  geom_col(aes(y = n, fill = -n), show.legend = FALSE) +
+  scale_x_continuous(n.breaks = 10) +
+  theme(panel.border = element_rect("lightgray", fill = NA)) +
+  labs(x = NULL, y = NULL, caption = "News") +
+  theme(
+    axis.text.x = element_text(size = 14, hjust = .5, vjust = .5),
+    axis.text.y = element_text(size = 14),
+    plot.caption = element_text(hjust = 0.5, size = rel(1.8)))
+
+tweets_distribution <- plot_tweets %>%
+  ggplot(aes(x = week)) + 
+  geom_col(aes(y = n, fill = -n), show.legend = FALSE) +
+  scale_x_continuous(n.breaks = 10) +
+  theme(panel.border = element_rect("lightgray", fill = NA)) +
+  labs(x = NULL, y = NULL, caption = "Twitter") +
+  theme(
+    axis.text.x = element_text(size = 14, hjust = .5, vjust = .5),
+    axis.text.y = element_text(size = 14),
+    plot.caption = element_text(hjust = 0.5, size = rel(1.8)))
+
+reddit_distribution <- plot_reddit %>%
+  ggplot(aes(x = week)) + 
+  geom_col(aes(y = n, fill = -n), show.legend = FALSE) +
+  scale_x_continuous(n.breaks = 6) +
+  theme(panel.border = element_rect("lightgray", fill = NA)) +
+  labs(x = NULL, y = NULL, caption = "Reddit") +
+  theme(
+    axis.text.x = element_text(size = 14, hjust = .5, vjust = .5),
+    axis.text.y = element_text(size = 14),
+    plot.caption = element_text(hjust = 0.5, size = rel(1.8)))
+
+grid.arrange(news_distribution, tweets_distribution, reddit_distribution,
+             ncol = 3)
+
 ```
 
 
-# Flow 2 - Copus - Token
+# Flow 2 - Corpus - Token
+
+For text data preparation, we focus on quanteda package in R, which is one of the most popular R packages for the quantitative analysis of textual data. Firstly, we created a corpus for the data set of each source. A corpus consists of a collection of documents (each document is an article, a Reddit comment or a tweet), and the document variables which describe the characteristics of the document, for instance published date and source. Subsequently, we tokenized each corpus, which separates the text into into its single words (also called terms or tokens). We pre-processed the data sets by transforming terms into lowercase and removing the numbers, punctuations, symbols, URLs and separators. We also implemented  stopword removal and lemmatization technique. Stopwords are words that appear in texts but do not give the text a substantial meaning (e.g., "the", "a", or "for") and lemmatization deals with the inflected forms of words by replacing them with their base forms.
+
+In the next step, we generated a document-feature matrix (also known as document-term matrix) for each source. It represents how frequently terms occur in the corpus by counting single terms. We kept only the top 5% of the most frequent features (minimum term frequency set at 0.95) that present in less than 10% of all documents (maximum document frequency set at 0.1) to focus on common but distinctive features.
 
 ## Reddit
 
-### Create a copus 
+### Create a corpus 
 
 ```{r}
 
 corpus_Reddit_data <- corpus(reddit_data, text_field = c("comments"), unique_docnames = F) %>%
-  `docnames<-`(reddit_data$Week)
+  `docnames<-`(reddit_data$week)
 
 ```
 
@@ -126,8 +197,6 @@ Token_Reddit_data <- corpus_Reddit_data %>%
 
 ### Keep Top features
 
-We keep only the top 5% of the most frequent features (min_termfreq = 0.95) that appear in less than 10% of all documents (max_docfreq = 0.1) using dfm_trim() to focus on common but distinguishing features.
-
 ```{r}
 
 Reddit_DFM <- Token_Reddit_data %>% 
@@ -144,7 +213,7 @@ Reddit_DFM <- Reddit_DFM[ntoken(Reddit_DFM) > 0,]
 
 ## Twitter
 
-### Create a copus 
+### Create a corpus 
 
 ```{r}
 
@@ -182,8 +251,6 @@ Token_Twitter_data <- corpus_Twitter_data %>%
 
 ### Keep Top features
 
-We keep only the top 5% of the most frequent features (min_termfreq = 0.95) that appear in less than 10% of all documents (max_docfreq = 0.1) using dfm_trim() to focus on common but distinguishing features.
-
 ```{r}
 
 Twitter_DFM <- Token_Twitter_data %>% 
@@ -206,8 +273,8 @@ Twitter_DFM <- Twitter_DFM[ntoken(Twitter_DFM) > 0,]
 
 corpus_News_data <- corpus(news_data, text_field = c("text"), 
                            unique_docnames = F) %>%
-  `docnames<-`(news_data$week) # update the name of document in the copus
-
+  `docnames<-`(news_data$week) # update the name of document in the corpus
+#head(corpus_News_data, 5) # take a look at the corpus
 ```
 
 ### Stop Words & Base formed words
@@ -227,7 +294,7 @@ lemma_data <- read.csv("baseform_en.tsv", encoding = "UTF-8")
 Token_news_data <- corpus_News_data %>% 
   tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE, 
          remove_url = TRUE, remove_separators = TRUE) %>% 
-  tokens_tolower(keep_acronyms = TRUE) %>%
+  tokens_tolower(keep_acronyms = FALSE) %>%
   tokens_remove(pattern = c("amid", "updates", "live", "video", "briefing")) %>%
   tokens_replace(lemma_data$inflected_form, lemma_data$lemma, 
                  valuetype = "glob") %>%
@@ -241,11 +308,9 @@ Token_news_data <- corpus_News_data %>%
 
 ### Keep Top features
 
-We keep only the top 5% of the most frequent features (min_termfreq = 0.95) that appear in less than 10% of all documents (max_docfreq = 0.1) using dfm_trim() to focus on common but distinguishing features.
-
 ```{r}
 
-Collocations_DFM <- Token_news_data %>% 
+News_DFM <- Token_news_data %>% 
   tokens_remove("") %>%
   dfm() %>% 
   dfm_trim(min_termfreq = 0.95, termfreq_type = "quantile",
@@ -253,8 +318,8 @@ Collocations_DFM <- Token_news_data %>%
 
 # We remove the token = 0
 
-News_DFM <- news_DFM[ntoken(news_DFM) > 0, ]
-#dim(news_DFM)
+News_DFM <- News_DFM[ntoken(News_DFM) > 0, ]
+#head(News_DFM, n = 5, nf = 8)
 
 ```
 
@@ -1062,7 +1127,7 @@ Reddit_stm <- convert(Reddit_DFM, to = "stm")
 ```
 
 
-### Choosing `k` by parameter tunning
+### Choosing `k` by parameter tuning
 
 `https://juliasilge.com/blog/evaluating-stm/`
 
@@ -1073,21 +1138,21 @@ library(stm)
 library(furrr)
 plan(multiprocess)
 
-Reddit_many_models <- data_frame(K = c(10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
+Reddit_many_models <- data_frame(K = c(8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
   mutate(topic_model = future_map(K, ~stm::stm(Reddit_DFM, K = .,
                                                verbose = FALSE)))
 ```
 
 
-*The model tunring*
+*The model tuning*
 
 ```{r}
-Reddit_heldout <- make.Reddit_heldout(Reddit_DFM)
+Reddit_heldout <- make.heldout(Reddit_DFM)
 
 Reddit_k_result <- Reddit_many_models %>%
   mutate(exclusivity = map(topic_model, exclusivity),
          semantic_coherence = map(topic_model, semanticCoherence, Reddit_DFM),
-         eval_heldout = map(topic_model, eval.Reddit_heldout, Reddit_heldout$missing),
+         eval_heldout = map(topic_model, eval.heldout, Reddit_heldout$missing),
          residual = map(topic_model, checkResiduals, Reddit_DFM),
          bound =  map_dbl(topic_model, function(x) max(x$convergence$bound)),
          lfact = map_dbl(topic_model, function(x) lfactorial(x$settings$dim$K)),
@@ -1153,7 +1218,7 @@ Reddit_topic_model <- stm(
   documents = Reddit_stm$documents, 
   vocab = Reddit_stm$vocab,
   K = 20,
-  prevalence =~ s(Week),
+  prevalence =~ s(week),
   data = Reddit_stm$meta,
   init.type = "Spectral")
 
@@ -1250,7 +1315,7 @@ Twitter_stm <- convert(Twitter_DFM, to = "stm")
 ```
 
 
-### Choosing `k` by parameter tunning
+### Choosing `k` by parameter tuning
 
 `https://juliasilge.com/blog/evaluating-stm/`
 
@@ -1267,15 +1332,15 @@ Twitter_many_models <- data_frame(K = c(8,9,10,11,12,13,14,15,16,17,18,19,20,21,
 ```
 
 
-*The model tunring*
+*The model tuning*
 
 ```{r}
-Twitter_heldout <- make.Twitter_heldout(Twitter_DFM)
+Twitter_heldout <- make.heldout(Twitter_DFM)
 
 Twitter_k_result <- Twitter_many_models %>%
   mutate(exclusivity = map(topic_model, exclusivity),
          semantic_coherence = map(topic_model, semanticCoherence, Twitter_DFM),
-         eval_heldout = map(topic_model, eval.Twitter_heldout, Twitter_heldout$missing),
+         eval_heldout = map(topic_model, eval.heldout, Twitter_heldout$missing),
          residual = map(topic_model, checkResiduals, Twitter_DFM),
          bound =  map_dbl(topic_model, function(x) max(x$convergence$bound)),
          lfact = map_dbl(topic_model, function(x) lfactorial(x$settings$dim$K)),
@@ -1293,7 +1358,7 @@ Twitter_k_result %>%
             `Lower bound` = lbound,
             Residuals = map_dbl(residual, "dispersion"),
             `Semantic coherence` = map_dbl(semantic_coherence, mean),
-            `Held-out likelihood` = map_dbl(eval_heldout, "expected.Twitter_heldout")) %>%
+            `Held-out likelihood` = map_dbl(eval_heldout, "expected.heldout")) %>%
   gather(Metric, Value, -K) %>%
   ggplot(aes(K, Value, color = Metric)) +
   geom_line(size = 1.5, alpha = 0.7, show.legend = FALSE) +
@@ -1301,7 +1366,7 @@ Twitter_k_result %>%
   labs(x = "K (number of topics)",
        y = NULL,
        title = "Model diagnostics by number of topics",
-       subtitle = "These diagnostics indicate that a good number of topics would be around 60")
+       subtitle = "These diagnostics indicate that a good number of topics would be around 11")
 ```
 
 
@@ -1438,7 +1503,7 @@ News_stm <- convert(News_DFM, to = "stm")
 ```
 
 
-### Choosing `k` by parameter tunning
+### Choosing `k` by parameter tuning
 
 `https://juliasilge.com/blog/evaluating-stm/`
 
@@ -1449,21 +1514,21 @@ library(stm)
 library(furrr)
 plan(multiprocess)
 
-News_many_models <- data_frame(K = c(10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
+News_many_models <- data_frame(K = c(8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
   mutate(topic_model = future_map(K, ~stm::stm(News_DFM, K = .,
                                                verbose = FALSE)))
 ```
 
 
-*The model tunring*
+*The model tuning*
 
 ```{r}
-News_heldout <- make.News_heldout(News_DFM)
+News_heldout <- make.heldout(News_DFM)
 
 News_k_result <- News_many_models %>%
   mutate(exclusivity = map(topic_model, exclusivity),
          semantic_coherence = map(topic_model, semanticCoherence, News_DFM),
-         eval_heldout = map(topic_model, eval.News_heldout, News_heldout$missing),
+         eval_heldout = map(topic_model, eval.heldout, News_heldout$missing),
          residual = map(topic_model, checkResiduals, News_DFM),
          bound =  map_dbl(topic_model, function(x) max(x$convergence$bound)),
          lfact = map_dbl(topic_model, function(x) lfactorial(x$settings$dim$K)),
@@ -1481,15 +1546,15 @@ News_k_result %>%
             `Lower bound` = lbound,
             Residuals = map_dbl(residual, "dispersion"),
             `Semantic coherence` = map_dbl(semantic_coherence, mean),
-            `Held-out likelihood` = map_dbl(eval_heldout, "expected.News_heldout")) %>%
+            `Held-out likelihood` = map_dbl(eval_heldout, "expected.heldout")) %>%
   gather(Metric, Value, -K) %>%
   ggplot(aes(K, Value, color = Metric)) +
   geom_line(size = 1.5, alpha = 0.7, show.legend = FALSE) +
   facet_wrap(~Metric, scales = "free_y") +
   labs(x = "K (number of topics)",
        y = NULL,
-       title = "Model diagnostics by number of topics",
-       subtitle = "These diagnostics indicate that a good number of topics would be around 60")
+       title = "Model diagnostics by number of topics - News data",
+       subtitle = "These diagnostics indicate that a good number of topics would be around 19")
 ```
 
 
@@ -1501,14 +1566,14 @@ Semantic coherence is maximized when the most probable words in a given topic fr
 ```{r}
 News_k_result %>%
   select(K, exclusivity, semantic_coherence) %>%
-  filter(K %in% c(10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
+  filter(K %in% c(8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)) %>%
   unnest(cols = c(exclusivity, semantic_coherence)) %>%
   mutate(K = as.factor(K)) %>%
   ggplot(aes(semantic_coherence, exclusivity, color = K)) +
   geom_point(size = 2, alpha = 0.7) +
   labs(x = "Semantic coherence",
        y = "Exclusivity",
-       title = "Comparing exclusivity and semantic coherence",
+       title = "Comparing exclusivity and semantic coherence - News data",
        subtitle = "Models with fewer topics have higher semantic coherence for more topics, but lower exclusivity")
 ```
 
@@ -1529,7 +1594,7 @@ News_topic_model <- stm(
   documents = News_stm$documents, 
   vocab = News_stm$vocab,
   K = 20,
-  prevalence =~ s(Week),
+  prevalence =~ s(week),
   data = News_stm$meta,
   init.type = "Spectral")
 
@@ -1614,9 +1679,14 @@ stmCorrViz(News_topic_model, "stm-interactive-correlation.html",
 
 
 
-
-
 # Flow 5 - Topic Model Sentiments
+
+To investigate sentiments in news articles, reddit comments and tweets, we first split a document into tokens. We calculated sentiment scores with the AFINN lexicon developed by Nielsen, which is included in the tidytext package. The AFINN lexicon is a list of English words manually rated with an integer between -5 (negative) and +5 (positive). It comprises 2,477 terms.
+
+We assigned the sentiment value for each topic word, and the probability of a word in a topic given by the STM topic model as the term weight of the word. As a result, topic sentiment score is calculated as
+$$Sentiment\ Score\ of\ Topic\ A = \sum_{i=1}^{n} (Prob(word_i|Topic_A)*sentiment\ value(word_i))$$
+
+An overall topic sentiment score is computed by multiplying the sentiment value by the probability of words and summing the products in a chosen topic. Multiple topics could have the same words with different probability values. Therefore, the sentiment score of a topic would be distinguished from others even if the same set of words appear in different topics. We then determined the weekly sentiment score of a topic by multiplying the overall score by the proportion of the topic in each observed week.
 
 ## Reddit Data
 
