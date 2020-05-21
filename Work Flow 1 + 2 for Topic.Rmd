@@ -174,7 +174,7 @@ Token_Twitter_data <- corpus_Twitter_data %>%
   tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE,
          remove_url = TRUE, remove_separators = TRUE) %>% 
   tokens_tolower(keep_acronyms = FALSE) %>%
-  tokens_remove(pattern = c("people", "covid19", "covid")) %>%
+  tokens_remove(pattern = c("people", "covid19", "covid", "rt", "dont")) %>%
   tokens_replace(lemma_data$inflected_form, lemma_data$lemma, 
                  valuetype = "glob") %>% 
   tokens_remove(pattern = stopwords_extended, padding = T)
