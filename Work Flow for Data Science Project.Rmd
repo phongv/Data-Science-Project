@@ -14,6 +14,7 @@ Package
 
 library(tidyverse) # data manipulation
 library(quanteda) # text pre-processing
+library(quanteda.dictionaries)
 library(tidytext) # text analysis
 library(lubridate) # date function
 library(gridExtra) # multiple graphs
@@ -93,6 +94,8 @@ news_data <- news_data %>%
 
 ```
 
+## Data Distribution
+
 For data cleaning, we removed duplicated data, texts that were too short and kept only texts written in English. Consequently, 14,149 news articles, 352,842 Reddit comments and 109,329 tweets were ready for analysis. The data distribution can be seen in Figure 1. The number of news reported on COVID-19 in the U.S were relatively low in the first 6 weeks (week 3 - week 8), and the subreddit CoronavirusUS was not even created until week 7. However, there was a dramatic increase starting from week 9 and peaked in week 11, 12 and 13 for Twitter, Reddit and News respectively. This was the end of March when the number of infected cases in the country surged.
 
 ```{r Data Count, echo=FALSE}
@@ -123,34 +126,34 @@ news_distribution <- plot_news %>%
   ggplot(aes(x = week)) + 
   geom_col(aes(y = n, fill = -n), show.legend = FALSE) +
   scale_x_continuous(n.breaks = 10) +
-  theme(panel.border = element_rect("lightgray", fill = NA)) +
-  labs(x = NULL, y = NULL, caption = "News") +
+  labs(x = NULL, y = NULL, subtitle = "News") +
   theme(
     axis.text.x = element_text(size = 14, hjust = .5, vjust = .5),
     axis.text.y = element_text(size = 14),
-    plot.caption = element_text(hjust = 0.5, size = rel(1.8)))
+    panel.border = element_rect("lightgray", fill = NA),
+    plot.subtitle = element_text(hjust = 0.5, size = rel(1.8)))
 
 tweets_distribution <- plot_tweets %>%
   ggplot(aes(x = week)) + 
   geom_col(aes(y = n, fill = -n), show.legend = FALSE) +
   scale_x_continuous(n.breaks = 10) +
-  theme(panel.border = element_rect("lightgray", fill = NA)) +
-  labs(x = NULL, y = NULL, caption = "Twitter") +
+  labs(x = NULL, y = NULL, subtitle = "Twitter") +
   theme(
     axis.text.x = element_text(size = 14, hjust = .5, vjust = .5),
     axis.text.y = element_text(size = 14),
-    plot.caption = element_text(hjust = 0.5, size = rel(1.8)))
+    panel.border = element_rect("lightgray", fill = NA),
+    plot.subtitle = element_text(hjust = 0.5, size = rel(1.8)))
 
 reddit_distribution <- plot_reddit %>%
   ggplot(aes(x = week)) + 
   geom_col(aes(y = n, fill = -n), show.legend = FALSE) +
   scale_x_continuous(n.breaks = 6) +
-  theme(panel.border = element_rect("lightgray", fill = NA)) +
-  labs(x = NULL, y = NULL, caption = "Reddit") +
+  labs(x = NULL, y = NULL, subtitle = "Reddit") +
   theme(
     axis.text.x = element_text(size = 14, hjust = .5, vjust = .5),
     axis.text.y = element_text(size = 14),
-    plot.caption = element_text(hjust = 0.5, size = rel(1.8)))
+    panel.border = element_rect("lightgray", fill = NA),
+    plot.subtitle = element_text(hjust = 0.5, size = rel(1.8)))
 
 grid.arrange(news_distribution, tweets_distribution, reddit_distribution,
              ncol = 3)
@@ -160,7 +163,9 @@ grid.arrange(news_distribution, tweets_distribution, reddit_distribution,
 
 # Flow 2 - Corpus - Token
 
-For text data preparation, we focus on quanteda package in R, which is one of the most popular R packages for the quantitative analysis of textual data. Firstly, we created a corpus for the data set of each source. A corpus consists of a collection of documents (each document is an article, a Reddit comment or a tweet), and the document variables which describe the characteristics of the document, for instance published date and source. Subsequently, we tokenized each corpus, which separates the text into into its single words (also called terms or tokens). We pre-processed the data sets by transforming terms into lowercase and removing the numbers, punctuations, symbols, URLs and separators. We also implemented  stopword removal and lemmatization technique. Stopwords are words that appear in texts but do not give the text a substantial meaning (e.g., "the", "a", or "for") and lemmatization deals with the inflected forms of words by replacing them with their base forms.
+For text data preparation, we focus on quanteda package in R, which is one of the most popular R packages for the quantitative analysis of textual data. Firstly, we created a corpus for the data set of each source. A corpus consists of a collection of documents (each document is an article, a Reddit comment or a tweet), and the document variables which describe the characteristics of the document, for instance published date and source. Subsequently, we tokenized each corpus, which separates the text into into its single words (also called terms or tokens). 
+
+We pre-processed the data sets by lowering upper case letters and removing the numbers, punctuations, symbols, URLs and separators. The main idea is to reduce the final amount of terms extracted, which is important in order to improve the accuracy of both topic modeling and sentiment analysis. If two words are similar it is convenient to combine them as one unique word. Moreover, if a word is not relevant for the analysis, it can be removed from. Hence, we also implemented stopword removal and lemmatization technique. Stopwords are words that appear in texts but do not give the text a substantial meaning (e.g., "the", "a", or "for") and lemmatization deals with the inflected forms of words by replacing them with their base forms.
 
 In the next step, we generated a document-feature matrix (also known as document-term matrix) for each source. It represents how frequently terms occur in the corpus by counting single terms. We kept only the top 5% of the most frequent features (minimum term frequency set at 0.95) that present in less than 10% of all documents (maximum document frequency set at 0.1) to focus on common but distinctive features.
 
@@ -1414,7 +1419,7 @@ The argument init.type allows the user to specify an initialization method. The 
 Twitter_topic_model <- stm(
   documents = Twitter_stm$documents, 
   vocab = Twitter_stm$vocab,
-  K = 12,
+  K = 25,
   prevalence =~ s(week),
   data = Twitter_stm$meta,
   init.type = "Spectral",
@@ -1564,7 +1569,7 @@ News_k_result %>%
   labs(x = "K (number of topics)",
        y = NULL,
        title = "Model diagnostics by number of topics - News data",
-       subtitle = "These diagnostics indicate that a good number of topics would be around 19")
+       subtitle = "These diagnostics indicate that a good number of topics would be around 25")
 ```
 
 
@@ -1603,7 +1608,7 @@ The argument init.type allows the user to specify an initialization method. The 
 News_topic_model <- stm(
   documents = News_stm$documents, 
   vocab = News_stm$vocab,
-  K = 19,
+  K = 25,
   prevalence =~ s(week),
   data = News_stm$meta,
   init.type = "Spectral",
@@ -1695,187 +1700,209 @@ sum(bing$sentiment == "positive")
 
 To investigate sentiments in news articles, reddit comments and tweets, we first split a document into tokens. We calculated sentiment scores with the opinion lexicon developed by Bing Liu et al., which is included in the tidytext package. The Bing lexicon is a list of English words categorized into positive and negative categories. It comprises 2,005 positive terms and 4,781 negative terms.
 
-We assigned the sentiment value for each topic word with an integer of +1 for positive and -1 for negative, and the probability of a word in a topic given by the STM topic model as the term weight of the word. As a result, topic sentiment score is calculated as
+For each source, we calculated the sentiment score as the percentage of the difference between the number of positive terms and negative terms operating on the total opinion terms
+
+
+On the topic-based level, we assigned the sentiment value for each topic word with an integer of +1 for positive and -1 for negative, and the probability of a word in a topic given by the STM topic model as the term weight of the word. As a result, topic sentiment score is calculated as
 $$Sentiment\ Score\ of\ Topic\ A = \sum_{i=1}^{n} (prob(word_i|Topic_A)*sentiment\ value(word_i))$$
 
-An overall topic sentiment score is computed by multiplying the sentiment value by the probability of words and summing the products in a chosen topic. Multiple topics could have the same words with different probability values. Therefore, the sentiment score of a topic would be distinguished from others even if the same set of words appear in different topics. We then determined the weekly sentiment score of a topic by multiplying the overall score by the proportion of the topic in each observed week.
+An overall topic sentiment score is computed by multiplying the sentiment value by the probability of words and summing the products in a chosen topic. Multiple topics could have the same words with different probability values. Therefore, the sentiment score of a topic would be distinguished from others even if the same set of words appear in different topics. 
+
 
 ## Reddit Data
 
-### Extract beta and gamma matrix to data frame format
+### Make a DFM with the Bing dictionary
+
+```{r}
+Reddit_DFM_bing <- Token_Reddit_data %>% 
+  tokens_remove("") %>%
+  dfm(dictionary = data_dictionary_HuLiu) %>% 
+  dfm_group(group = "week", fill = TRUE)
+```
+
+### Create a data frame to plot sentiment
+
+```{r}
+Reddit_bing_chart <- convert(Reddit_DFM_bing, to = "data.frame")%>%
+  mutate(sum = positive + negative, 
+         pos_percent = positive/sum*100,
+         neg_percent = negative/sum*100, 
+         polarity = round((pos_percent - neg_percent),3),
+         source = "Reddit") %>%
+  select(week = document, polarity, source)
+
+Reddit_bing_chart$week <- as.numeric(as.character(Reddit_bing_chart$week))
+```
+
+### Extract beta matrix to data frame format. Using Bing lexicon, make a data frame with the sentiment for each word
 
 ```{r}
 Reddit_beta <- tidy(Reddit_topic_model, matrix = "beta")
-Reddit_gamma <- tidy(Reddit_topic_model, matrix = "gamma", 
-                   document_names = reddit_data$week) %>% 
-  group_by(document, topic) %>% #calculate the total gamma per topic per week
-  summarise(total_gamma = sum(gamma))
-```
-
-
-### Get topic proportion per week and extract the top topic
-
-```{r}
-names(Reddit_gamma)[names(Reddit_gamma) == "document"] <- "week"
-
-Reddit_topic_proportion <- left_join(Reddit_gamma, plot_reddit, by = "week") %>% 
-  mutate(topic_proportion = total_gamma / n) %>% 
-  arrange(desc(topic_proportion)) %>%
-  group_by(week) %>% 
-  slice(seq_len(1)) %>%
-  ungroup() %>%
-  select(-c("total_gamma", "n"))
-```
-
-
-### Using Bing lexicon, make a data frame with the sentiment for each word  
-
-```{r}
 bing <- get_sentiments("bing")
-Reddit_sc <- inner_join(Reddit_beta, bing, by = c("term" = "word")) %>% 
+Reddit_topic_sc <- inner_join(Reddit_beta, bing, by = c("term" = "word")) %>% 
   mutate(score = ifelse(sentiment == "negative", beta * (-1), beta)) %>% 
-  group_by(topic, sentiment) %>% 
+  group_by(topic) %>% 
   summarise(sentiment_score = sum(score))
-```
-
-
-### Combine topic proportion data frame and word sentiment data frame. 
-
-```{r}
-Reddit_top_topic_sentiment <- left_join(Reddit_topic_proportion, 
-                                      Reddit_sc, by = "topic") %>% 
-  mutate(topic_score = topic_proportion * sentiment_score) %>% 
-  group_by(week, topic, source) %>% 
-  summarise(polarity = sum(topic_score))
+Reddit_topic_sc$topic <- factor(Reddit_topic_sc$topic, levels = c(1:25))
 ```
 
 
 ## Twitter Data
 
+### Make a DFM with the Bing dictionary
+
+```{r}
+Twitter_DFM_bing <- Token_Twitter_data %>% 
+  tokens_remove("") %>%
+  dfm(dictionary = data_dictionary_HuLiu) %>% 
+  dfm_group(group = "week", fill = TRUE)
+```
+
+### Create a data frame to plot sentiment
+
+```{r}
+Twitter_bing_chart <- convert(Twitter_DFM_bing, to = "data.frame")%>%
+  mutate(sum = positive + negative, 
+         pos_percent = positive/sum*100,
+         neg_percent = negative/sum*100, 
+         polarity = round((pos_percent - neg_percent),3),
+         source = "Twitter") %>%
+  select(week = document, polarity, source)
+
+Twitter_bing_chart$week <- as.numeric(as.character(Twitter_bing_chart$week))
+```
+
+### Extract beta matrix to data frame format. Using Bing lexicon, make a data frame with the sentiment for each word
 
 ```{r}
 Twitter_beta <- tidy(Twitter_topic_model, matrix = "beta")
-Twitter_gamma <- tidy(Twitter_topic_model, matrix = "gamma", 
-                   document_names = tweets_data$week) %>% 
-  group_by(document, topic) %>% #calculate the total gamma per topic per week
-  summarise(total_gamma = sum(gamma))
-```
-
-
-### Get topic proportion per week and extract the top topic
-
-```{r}
-names(Twitter_gamma)[names(Twitter_gamma) == "document"] <- "week"
-
-Twitter_topic_proportion <- left_join(Twitter_gamma, plot_tweets, by = "week") %>% 
-  mutate(topic_proportion = total_gamma / n) %>% 
-  arrange(desc(topic_proportion)) %>%
-  group_by(week) %>% 
-  slice(seq_len(1)) %>%
-  ungroup() %>%
-  select(-c("total_gamma", "n"))
-```
-
-
-### Using Bing lexicon, make a data frame with the sentiment for each word  
-
-```{r}
 bing <- get_sentiments("bing")
-Twitter_sc <- inner_join(Twitter_beta, bing, by = c("term" = "word")) %>% 
+Twitter_topic_sc <- inner_join(Twitter_beta, bing, by = c("term" = "word")) %>% 
   mutate(score = ifelse(sentiment == "negative", beta * (-1), beta)) %>% 
-  group_by(topic, sentiment) %>% 
+  group_by(topic) %>% 
   summarise(sentiment_score = sum(score))
-```
-
-
-### Combine topic proportion data frame and word sentiment data frame. 
-
-```{r}
-Twitter_top_topic_sentiment <- left_join(Twitter_topic_proportion, 
-                                      Twitter_sc, by = "topic") %>% 
-  mutate(topic_score = topic_proportion * sentiment_score) %>% 
-  group_by(week, topic, source) %>% 
-  summarise(polarity = sum(topic_score))
+Twitter_topic_sc$topic <- factor(Twitter_topic_sc$topic, levels = c(1:25))
 ```
 
 
 ## News Data
 
-### Extract beta and gamma matrix to data frame format
+### Make a DFM with the Bing dictionary
+
+```{r}
+News_DFM_bing <- Token_news_data %>% 
+  tokens_remove("") %>%
+  dfm(dictionary = data_dictionary_HuLiu) %>% 
+  dfm_group(group = "week", fill = TRUE)
+```
+
+### Create a data frame to plot sentiment
+
+```{r}
+News_bing_chart <- convert(News_DFM_bing, to = "data.frame")%>%
+  mutate(sum = positive + negative, 
+         pos_percent = positive/sum*100,
+         neg_percent = negative/sum*100, 
+         polarity = round((pos_percent - neg_percent),3),
+         source = "News") %>%
+  select(week = document, polarity, source)
+
+News_bing_chart$week <- as.numeric(as.character(News_bing_chart$week))
+```
+
+### Extract beta matrix to data frame format. Using Bing lexicon, make a data frame with the sentiment for each word
 
 ```{r}
 News_beta <- tidy(News_topic_model, matrix = "beta")
-News_gamma <- tidy(News_topic_model, matrix = "gamma", 
-                   document_names = news_data$week) %>% 
-  group_by(document, topic) %>% #calculate the total gamma per topic per week
-  summarise(total_gamma = sum(gamma))
-```
-
-
-### Get topic proportion per week and extract the top topic
-
-```{r}
-names(News_gamma)[names(News_gamma) == "document"] <- "week"
-
-News_topic_proportion <- left_join(News_gamma, plot_news, by = "week") %>% 
-  mutate(topic_proportion = total_gamma / n) %>% 
-  arrange(desc(topic_proportion)) %>%
-  group_by(week) %>% 
-  slice(seq_len(1)) %>%
-  ungroup() %>%
-  select(-c("total_gamma", "n"))
-```
-
-
-### Using Bing lexicon, make a data frame with the sentiment for each word  
-
-```{r}
 bing <- get_sentiments("bing")
-News_sc <- inner_join(News_beta, bing, by = c("term" = "word")) %>% 
+News_topic_sc <- inner_join(News_beta, bing, by = c("term" = "word")) %>% 
   mutate(score = ifelse(sentiment == "negative", beta * (-1), beta)) %>% 
-  group_by(topic, sentiment) %>% 
+  group_by(topic) %>% 
   summarise(sentiment_score = sum(score))
+News_topic_sc$topic <- factor(News_topic_sc$topic, levels = c(1:25))
 ```
 
 
-### Combine topic proportion data frame and word sentiment data frame. 
+## Plot for Sentiment Analysis
+
+### Sentiment changes in all three sources
+
+Figure  shows the sentiment in news, Reddit and Twitter about coronavirus from week 3 to week 16 of 2020. 
 
 ```{r}
-News_top_topic_sentiment <- left_join(News_topic_proportion, 
-                                         News_sc, by = "topic") %>% 
-  mutate(topic_score = topic_proportion * sentiment_score) %>% 
-  group_by(week, topic, source) %>% 
-  summarise(polarity = sum(topic_score))
-```
-
-
-## Plot the changes in top topics in all three sources along with their sentiment scores
-
-```{r}
-library(ggrepel)
-
-All_source_sc <- rbind(Reddit_top_topic_sentiment, Twitter_top_topic_sentiment, News_top_topic_sentiment)
-
-All_source_sc %>% 
-  ggplot(aes(x = week, y = polarity, color = source)) +
-  geom_point(size = 1.2) +
-  geom_path(size = 0.7, linetype = "dashed") +
-  geom_text_repel(aes(label = topic),
-                  nudge_x = -0.05,
-                  direction = "y",
-                  size = 4,
-                  show.legend = FALSE) +
-  geom_hline(yintercept = 0, color = "bisque4", 
-             size = 0.6, alpha = 0.6) +
-  labs(x = "Week", y = "Sentiment Score") + 
-  scale_x_continuous(breaks = News_top_topic_sentiment$week,
-                     labels = News_top_topic_sentiment$week) +
-  scale_y_continuous(limits = c(-0.035, 0.015),
-                     n.breaks = 10) +
-  #theme(legend.position = "bottom") +
-  #scale_colour_manual(values = c("#1F78B4", "#E3211C", "#33A02B")) +
-  theme(panel.grid.major.x = element_blank(), #remove vertical gridlines
+bing_chart_all <- rbind(Reddit_bing_chart, News_bing_chart, Twitter_bing_chart)
+bing_chart_all %>% 
+  ggplot(aes(x = week, y = polarity, color = source)) + 
+  geom_point() +
+  geom_path() +
+  geom_hline(yintercept = 0, color = "gold3") +
+  labs(x = "Week", y = "Percent") + 
+  scale_x_continuous(  # This handles replacement of row 
+    breaks = bing_chart_all$week, # notice need to reuse data frame
+    labels = bing_chart_all$week) +
+  scale_y_continuous(limits = c(-80, 20), n.breaks = 10) +
+  scale_colour_manual(values = c("#33A02B", "#E3211C", "#1F78B4")) +
+  theme(panel.grid = element_blank(),
+        panel.background = NULL,
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 16),
         legend.position = "bottom")
+
+```
+
+Overall, the opinion towards COVID-19 of all three sources remained negative throughout the period. There was a similar pattern between news articles and Twitter, as the sentiment scores were significantly low in week 3 but showed an upward trend in the subsequent weeks and wavered at around -20 from week 12 to week 16. For Reddit, the sentiment of comments did not have much changes, as it fluctuated at around -30 and -20.
+
+
+### Topic-based sentiment scores
+
+Using STM model with the same number of topics of 25 for all three sources, we calculated the sentiment score of each topic. Again, the general opinions in most topics were negative. Reddit had some extremely negative sentiments, as in topic 4, 17 and 22. At the same time, news and Twitter had a few notable negativity, with topic 22 and 23 in news and topic 6, 8 and 21 in Twitter, whereas the other topics in these two sources were close to neutral. This indicates that Reddit comments convey more emotional expression than news articles and Twitter posts do.
+
+```{r}
+# News
+
+News_topic_sc_plot <- News_topic_sc %>% 
+  ggplot(aes(x = topic, y = sentiment_score)) + 
+  geom_col(fill = "#33A02B") +
+  geom_hline(yintercept = 0, color = "gold3") +
+  labs(x = NULL, y = NULL, subtitle = "News") + 
+  scale_y_continuous(limits = c(-0.3, 0.2), n.breaks = 6) +
+  theme(panel.grid = element_blank(),
+        panel.background = NULL,
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        plot.subtitle = element_text(size = rel(1.5)))
+
+# Reddit
+
+Reddit_topic_sc_plot <- Reddit_topic_sc %>% 
+  ggplot(aes(x = topic, y = sentiment_score)) + 
+  geom_col(fill = "#E3211C") +
+  geom_hline(yintercept = 0, color = "gold3") +
+  labs(x = NULL, y = NULL, subtitle = "Reddit") + 
+  scale_y_continuous(limits = c(-0.3, 0.2), n.breaks = 6) +
+  theme(panel.grid = element_blank(),
+        panel.background = NULL,
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        plot.subtitle = element_text(size = rel(1.5)))
+
+# Twitter
+
+Twitter_topic_sc_plot <- Twitter_topic_sc %>% 
+  ggplot(aes(x = topic, y = sentiment_score)) + 
+  geom_col(fill = "#1F78B4") +
+  geom_hline(yintercept = 0, color = "gold3") +
+  labs(x = "Topic", y = NULL, subtitle = "Twitter") + 
+  scale_y_continuous(limits = c(-0.3, 0.2), n.breaks = 6) +
+  theme(panel.grid = element_blank(),
+        panel.background = NULL,
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        plot.subtitle = element_text(size = rel(1.5)))
+
+grid.arrange(News_topic_sc_plot, Reddit_topic_sc_plot, Twitter_topic_sc_plot)
 ```
 
 
