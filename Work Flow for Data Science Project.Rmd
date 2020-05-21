@@ -18,7 +18,6 @@ library(quanteda.dictionaries)
 library(tidytext) # text analysis
 library(lubridate) # date function
 library(gridExtra) # multiple graphs
-library(ggrepel) # plot labels
 library(stm) # topic modelling
 library(stmCorrViz)
 library(furrr)
@@ -1698,7 +1697,7 @@ sum(bing$sentiment == "positive")
 
 # Flow 5 - Topic Model Sentiments
 
-To investigate sentiments in news articles, reddit comments and tweets, we first split a document into tokens. We calculated sentiment scores with the opinion lexicon developed by Bing Liu et al., which is included in the tidytext package. The Bing lexicon is a list of English words categorized into positive and negative categories. It comprises 2,005 positive terms and 4,781 negative terms.
+To investigate sentiments in news articles, reddit comments and tweets, we first split a document into tokens. We calculated sentiment scores with the opinion lexicon developed by Bing Liu et al., which is included in the quanteda.dictionaries and the tidytext package. The Bing lexicon is a list of English words categorized into positive and negative categories. It comprises 2,005 positive terms and 4,781 negative terms.
 
 For each source, we calculated the sentiment score as the percentage of the difference between the number of positive terms and negative terms operating on the total opinion terms
 
@@ -1857,7 +1856,7 @@ Overall, the opinion towards COVID-19 of all three sources remained negative thr
 
 ### Topic-based sentiment scores
 
-Using STM model with the same number of topics of 25 for all three sources, we calculated the sentiment score of each topic. Again, the general opinions in most topics were negative. Reddit had some extremely negative sentiments, as in topic 4, 17 and 22. At the same time, news and Twitter had a few notable negativity, with topic 22 and 23 in news and topic 6, 8 and 21 in Twitter, whereas the other topics in these two sources were close to neutral. This indicates that Reddit comments convey more emotional expression than news articles and Twitter posts do.
+Using STM model with the same number of topics of 25 for all three sources, we calculated the sentiment score of each topic. Again, the general opinions in most topics were negative. For further analysis, we ignored the topics that only had emotional words but did not contain any interpretable topics (e.g. Topic 21 of Twitter with high probability words like "dumb", "stupid", "kid", "hate").
 
 ```{r}
 # News
@@ -1905,18 +1904,6 @@ Twitter_topic_sc_plot <- Twitter_topic_sc %>%
 grid.arrange(News_topic_sc_plot, Reddit_topic_sc_plot, Twitter_topic_sc_plot)
 ```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+Reddit had some extremely negative sentiments, which showed that people were significantly worried about the fatality and the spread of the virus (Topic 4 of Reddit) and about the clinical symptoms of patients with COVID-19 (Topic 22). At the same time, news and Twitter had a few notable though not extreme negativity, with topic 22 and 23 in news and topic 6 and 11 in Twitter, whereas the other topics in these two sources were close to neutral. Twitter users appeared to have the same concerns as Reddit users, while the news media gravitated towards blaming politician and worry on social security. The difference in sentiment scores also indicates that Reddit comments convey more emotional expression than news articles and Twitter posts do.
 
 
