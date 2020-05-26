@@ -125,8 +125,9 @@ news_distribution <- plot_news %>%
   ggplot(aes(x = week)) + 
   geom_col(aes(y = n, fill = -n), show.legend = FALSE) +
   scale_x_continuous(n.breaks = 10) +
-  labs(x = NULL, y = NULL, subtitle = "News") +
+  labs(x = "week", y = "number of documents", subtitle = "News") +
   theme(
+    axis.title = element_text(size = 14),
     axis.text.x = element_text(size = 14, hjust = .5, vjust = .5),
     axis.text.y = element_text(size = 14),
     panel.border = element_rect("lightgray", fill = NA),
@@ -136,8 +137,9 @@ tweets_distribution <- plot_tweets %>%
   ggplot(aes(x = week)) + 
   geom_col(aes(y = n, fill = -n), show.legend = FALSE) +
   scale_x_continuous(n.breaks = 10) +
-  labs(x = NULL, y = NULL, subtitle = "Twitter") +
+  labs(x = "week", y = NULL, subtitle = "Twitter") +
   theme(
+    axis.title = element_text(size = 14),
     axis.text.x = element_text(size = 14, hjust = .5, vjust = .5),
     axis.text.y = element_text(size = 14),
     panel.border = element_rect("lightgray", fill = NA),
@@ -147,8 +149,9 @@ reddit_distribution <- plot_reddit %>%
   ggplot(aes(x = week)) + 
   geom_col(aes(y = n, fill = -n), show.legend = FALSE) +
   scale_x_continuous(n.breaks = 6) +
-  labs(x = NULL, y = NULL, subtitle = "Reddit") +
+  labs(x = "week", y = NULL, subtitle = "Reddit") +
   theme(
+    axis.title = element_text(size = 14),
     axis.text.x = element_text(size = 14, hjust = .5, vjust = .5),
     axis.text.y = element_text(size = 14),
     panel.border = element_rect("lightgray", fill = NA),
@@ -249,12 +252,9 @@ Token_Twitter_data <- corpus_Twitter_data %>%
   tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE,
          remove_url = TRUE, remove_separators = TRUE) %>% 
   tokens_tolower(keep_acronyms = FALSE) %>%
-  tokens_remove(pattern = c("people", "amp", "rt", "im", "dont", "ha")) %>%
+  tokens_remove(pattern = c("people", "covid19", "covid", "rt", "dont")) %>%
   tokens_replace(lemma_data$inflected_form, lemma_data$lemma, 
                  valuetype = "glob") %>% 
-  tokens_replace(pattern = c("covid-19", "covid19", "covid"), 
-                 c("coronavirus", "coronavirus", "coronavirus"),
-                 valuetype = "fixed") %>% 
   tokens_remove(pattern = stopwords_extended, padding = T)
 
 ```
@@ -313,7 +313,7 @@ Token_news_data <- corpus_News_data %>%
   tokens_replace(pattern = c("covid-19", "ncov", "cov"), 
                  c("coronavirus", "coronavirus", "coronavirus"),
                  valuetype = "fixed") %>% 
-  tokens_remove(pattern = stopwords_extended, padding = T)
+  tokens_remove(pattern = stopwords_extended, padding = F)
 
 ```
 
@@ -1224,7 +1224,7 @@ Additionally users can include more flexible functional forms of continuous cova
 The argument init.type allows the user to specify an initialization method. The default choice, "Spectral", provides a deterministic initialization using the spectral algorithm given in Arora et al 2014. See Roberts, Stewart and Tingley (2016) for details and a comparison of different approaches. Particularly when the number of documents is relatively large we highly recommend the Spectral algorithm which often performs extremely well.
 
 
-```{r}
+```{r, include=FALSE}
 
 Reddit_topic_model <- stm(
   documents = Reddit_stm$documents, 
@@ -1413,7 +1413,7 @@ Additionally users can include more flexible functional forms of continuous cova
 The argument init.type allows the user to specify an initialization method. The default choice, "Spectral", provides a deterministic initialization using the spectral algorithm given in Arora et al 2014. See Roberts, Stewart and Tingley (2016) for details and a comparison of different approaches. Particularly when the number of documents is relatively large we highly recommend the Spectral algorithm which often performs extremely well.
 
 
-```{r}
+```{r, include=FALSE}
 
 Twitter_topic_model <- stm(
   documents = Twitter_stm$documents, 
@@ -1602,7 +1602,7 @@ Additionally users can include more flexible functional forms of continuous cova
 The argument init.type allows the user to specify an initialization method. The default choice, "Spectral", provides a deterministic initialization using the spectral algorithm given in Arora et al 2014. See Roberts, Stewart and Tingley (2016) for details and a comparison of different approaches. Particularly when the number of documents is relatively large we highly recommend the Spectral algorithm which often performs extremely well.
 
 
-```{r}
+```{r, include=FALSE}
 
 News_topic_model <- stm(
   documents = News_stm$documents, 
@@ -1697,12 +1697,13 @@ sum(bing$sentiment == "positive")
 
 # Flow 5 - Topic Model Sentiments
 
-To investigate sentiments in news articles, reddit comments and tweets, we first split a document into tokens. We calculated sentiment scores with the opinion lexicon developed by Bing Liu et al., which is included in the quanteda.dictionaries and the tidytext package. The Bing lexicon is a list of English words categorized into positive and negative categories. It comprises 2,005 positive terms and 4,781 negative terms.
+To investigate sentiments in news articles, reddit comments and tweets, we used tokens extracted from the documents. We calculated sentiment scores with the AFINN lexicon developed by Finn Årup Nielsen, which is included in the tidytext package. The AFINN lexicon is a list of English terms manually rated for valence with an integer between -5 (negative) and +5 (positive). It comprises 878 positive terms and 1,598 negative terms.
 
-For each source, we calculated the sentiment score as the percentage of the difference between the number of positive terms and negative terms operating on the total opinion terms
+We calculated the sentiment score as the percentage of the difference between the absolute sum of positive terms and negative terms operating on the total sum of them
 
+With the purpose of examining from several perspectives, we also made use of the NRC lexicon from Saif Mohammad and Peter Turney. The NRC lexicon categorizes words in a binary fashion (“yes”/ “no”) into categories of positive, negative, anger, anticipation, disgust, fear, joy, sadness, surprise, and trust. We filtered out the positive and negative categories which left us with 4,463 distinct words in the lexicon (Note: one word can be in multiple sentiment categories). We counted the number of words in each category and computed their percentage distribution in each of our sources.
 
-On the topic-based level, we assigned the sentiment value for each topic word with an integer of +1 for positive and -1 for negative, and the probability of a word in a topic given by the STM topic model as the term weight of the word. As a result, topic sentiment score is calculated as
+On the topic-based level, we assigned the sentiment value for each topic word based on the lexicon and the probability of a word in a topic given by the STM topic model as the term weight of the word. As a result, topic sentiment score is calculated as
 $$Sentiment\ Score\ of\ Topic\ A = \sum_{i=1}^{n} (prob(word_i|Topic_A)*sentiment\ value(word_i))$$
 
 An overall topic sentiment score is computed by multiplying the sentiment value by the probability of words and summing the products in a chosen topic. Multiple topics could have the same words with different probability values. Therefore, the sentiment score of a topic would be distinguished from others even if the same set of words appear in different topics. 
@@ -1710,36 +1711,47 @@ An overall topic sentiment score is computed by multiplying the sentiment value 
 
 ## Reddit Data
 
-### Make a DFM with the Bing dictionary
+### Make a data frame with the AFINN dictionary
 
 ```{r}
-Reddit_DFM_bing <- Token_Reddit_data %>% 
-  tokens_remove("") %>%
-  dfm(dictionary = data_dictionary_HuLiu) %>% 
-  dfm_group(group = "week", fill = TRUE)
+afinn <- get_sentiments("afinn")
+
+Reddit_ext <- convert(Reddit_DFM, to = "tripletlist")
+Reddit_df <- data.frame(doc = Reddit_ext$document,
+                         word = Reddit_ext$feature,
+                         freq = Reddit_ext$frequency)
+Reddit_df$word <- as.character(Reddit_df$word)
+
+Reddit_afinn <- Reddit_df %>% 
+  inner_join(afinn, by = "word") %>% 
+  mutate(score = freq * value) %>% 
+  separate(doc, into = c("week", "no"), sep = "\\.") %>% 
+  mutate(sentiment = ifelse(score > 0, "positive", "negative")) %>% 
+  group_by(week, sentiment) %>% 
+  summarise(sentiment_score = sum(score)) %>% 
+  ungroup() %>% 
+  mutate(source = "Reddit")
 ```
 
 ### Create a data frame to plot sentiment
 
 ```{r}
-Reddit_bing_chart <- convert(Reddit_DFM_bing, to = "data.frame")%>%
-  mutate(sum = positive + negative, 
+Reddit_afinn_plot <- Reddit_afinn %>% 
+  pivot_wider(names_from = sentiment, values_from = sentiment_score) %>% 
+  mutate(sum = positive + (-1)*negative, 
          pos_percent = positive/sum*100,
-         neg_percent = negative/sum*100, 
-         polarity = round((pos_percent - neg_percent),3),
-         source = "Reddit") %>%
-  select(week = document, polarity, source)
-
-Reddit_bing_chart$week <- as.numeric(as.character(Reddit_bing_chart$week))
+         neg_percent = (-1)*negative/sum*100, 
+         polarity = round((pos_percent - neg_percent),3)) %>%
+  select(week, polarity, source)
 ```
 
-### Extract beta matrix to data frame format. Using Bing lexicon, make a data frame with the sentiment for each word
+### Extract beta matrix to data frame format. Using AFINN lexicon, make a data frame with the sentiment for each word
 
 ```{r}
+afinn <- get_sentiments("afinn")
 Reddit_beta <- tidy(Reddit_topic_model, matrix = "beta")
-bing <- get_sentiments("bing")
-Reddit_topic_sc <- inner_join(Reddit_beta, bing, by = c("term" = "word")) %>% 
-  mutate(score = ifelse(sentiment == "negative", beta * (-1), beta)) %>% 
+Reddit_topic_sc <- inner_join(Reddit_beta, afinn, by = c("term" = "word")) %>% 
+  mutate(score = beta * value) %>% 
   group_by(topic) %>% 
   summarise(sentiment_score = sum(score))
 Reddit_topic_sc$topic <- factor(Reddit_topic_sc$topic, levels = c(1:25))
@@ -1748,36 +1760,46 @@ Reddit_topic_sc$topic <- factor(Reddit_topic_sc$topic, levels = c(1:25))
 
 ## Twitter Data
 
-### Make a DFM with the Bing dictionary
+### Make a data frame with the AFINN dictionary
 
 ```{r}
-Twitter_DFM_bing <- Token_Twitter_data %>% 
-  tokens_remove("") %>%
-  dfm(dictionary = data_dictionary_HuLiu) %>% 
-  dfm_group(group = "week", fill = TRUE)
+afinn <- get_sentiments("afinn")
+
+Twitter_ext <- convert(Twitter_DFM, to = "tripletlist")
+Twitter_df <- data.frame(doc = Twitter_ext$document,
+                      word = Twitter_ext$feature,
+                      freq = Twitter_ext$frequency)
+Twitter_df$word <- as.character(Twitter_df$word)
+
+Twitter_afinn <- Twitter_df %>% 
+  inner_join(afinn, by = "word") %>% 
+  mutate(score = freq * value) %>% 
+  separate(doc, into = c("week", "no"), sep = "\\.") %>% 
+  mutate(sentiment = ifelse(score > 0, "positive", "negative")) %>% 
+  group_by(week, sentiment) %>% 
+  summarise(sentiment_score = sum(score)) %>% 
+  ungroup() %>% 
+  mutate(source = "Twitter")
 ```
 
 ### Create a data frame to plot sentiment
 
 ```{r}
-Twitter_bing_chart <- convert(Twitter_DFM_bing, to = "data.frame")%>%
-  mutate(sum = positive + negative, 
+Twitter_afinn_plot <- Twitter_afinn %>% 
+  pivot_wider(names_from = sentiment, values_from = sentiment_score) %>% 
+  mutate(sum = positive + (-1)*negative, 
          pos_percent = positive/sum*100,
-         neg_percent = negative/sum*100, 
-         polarity = round((pos_percent - neg_percent),3),
-         source = "Twitter") %>%
-  select(week = document, polarity, source)
-
-Twitter_bing_chart$week <- as.numeric(as.character(Twitter_bing_chart$week))
+         neg_percent = (-1)*negative/sum*100, 
+         polarity = round((pos_percent - neg_percent),3)) %>%
+  select(week, polarity, source)
 ```
 
-### Extract beta matrix to data frame format. Using Bing lexicon, make a data frame with the sentiment for each word
+### Extract beta matrix to data frame format. Using AFINN lexicon, make a data frame with the sentiment for each word
 
 ```{r}
 Twitter_beta <- tidy(Twitter_topic_model, matrix = "beta")
-bing <- get_sentiments("bing")
-Twitter_topic_sc <- inner_join(Twitter_beta, bing, by = c("term" = "word")) %>% 
-  mutate(score = ifelse(sentiment == "negative", beta * (-1), beta)) %>% 
+Twitter_topic_sc <- inner_join(Twitter_beta, afinn, by = c("term" = "word")) %>%  
+  mutate(score = beta * value) %>% 
   group_by(topic) %>% 
   summarise(sentiment_score = sum(score))
 Twitter_topic_sc$topic <- factor(Twitter_topic_sc$topic, levels = c(1:25))
@@ -1786,36 +1808,46 @@ Twitter_topic_sc$topic <- factor(Twitter_topic_sc$topic, levels = c(1:25))
 
 ## News Data
 
-### Make a DFM with the Bing dictionary
+### Make a data frame with the AFINN dictionary
 
 ```{r}
-News_DFM_bing <- Token_news_data %>% 
-  tokens_remove("") %>%
-  dfm(dictionary = data_dictionary_HuLiu) %>% 
-  dfm_group(group = "week", fill = TRUE)
+afinn <- get_sentiments("afinn")
+
+News_ext <- convert(News_DFM, to = "tripletlist")
+News_df <- data.frame(doc = News_ext$document,
+                        word = News_ext$feature,
+                        freq = News_ext$frequency)
+News_df$word <- as.character(News_df$word)
+
+News_afinn <- News_df %>% 
+  inner_join(afinn, by = "word") %>% 
+  mutate(score = freq * value) %>% 
+  separate(doc, into = c("week", "no"), sep = "\\.") %>% 
+  mutate(sentiment = ifelse(score > 0, "positive", "negative")) %>% 
+  group_by(week, sentiment) %>% 
+  summarise(sentiment_score = sum(score)) %>% 
+  ungroup() %>% 
+  mutate(source = "News")
 ```
 
 ### Create a data frame to plot sentiment
 
 ```{r}
-News_bing_chart <- convert(News_DFM_bing, to = "data.frame")%>%
-  mutate(sum = positive + negative, 
+News_afinn_plot <- News_afinn %>% 
+  pivot_wider(names_from = sentiment, values_from = sentiment_score) %>% 
+  mutate(sum = positive + (-1)*negative, 
          pos_percent = positive/sum*100,
-         neg_percent = negative/sum*100, 
-         polarity = round((pos_percent - neg_percent),3),
-         source = "News") %>%
-  select(week = document, polarity, source)
-
-News_bing_chart$week <- as.numeric(as.character(News_bing_chart$week))
+         neg_percent = (-1)*negative/sum*100, 
+         polarity = round((pos_percent - neg_percent),3)) %>%
+  select(week, polarity, source)
 ```
 
-### Extract beta matrix to data frame format. Using Bing lexicon, make a data frame with the sentiment for each word
+### Extract beta matrix to data frame format. Using AFINN lexicon, make a data frame with the sentiment for each word
 
 ```{r}
 News_beta <- tidy(News_topic_model, matrix = "beta")
-bing <- get_sentiments("bing")
-News_topic_sc <- inner_join(News_beta, bing, by = c("term" = "word")) %>% 
-  mutate(score = ifelse(sentiment == "negative", beta * (-1), beta)) %>% 
+News_topic_sc <- inner_join(News_beta, afinn, by = c("term" = "word")) %>% 
+  mutate(score = beta * value) %>% 
   group_by(topic) %>% 
   summarise(sentiment_score = sum(score))
 News_topic_sc$topic <- factor(News_topic_sc$topic, levels = c(1:25))
@@ -1824,22 +1856,25 @@ News_topic_sc$topic <- factor(News_topic_sc$topic, levels = c(1:25))
 
 ## Plot for Sentiment Analysis
 
-### Sentiment changes in all three sources
+### Sentiment changes in all three sources - AFINN
 
-Figure  shows the sentiment in news, Reddit and Twitter about coronavirus from week 3 to week 16 of 2020. 
+We examined the sentiment in news, Reddit and Twitter about coronavirus from week 3 to week 16 of 2020.
 
 ```{r}
-bing_chart_all <- rbind(Reddit_bing_chart, News_bing_chart, Twitter_bing_chart)
-bing_chart_all %>% 
+afinn_chart_all <- rbind(Reddit_afinn_plot, News_afinn_plot, Twitter_afinn_plot)
+afinn_chart_all$week <- as.numeric(as.character(afinn_chart_all$week))
+afinn_chart_all %>% 
+  arrange(week) %>% 
   ggplot(aes(x = week, y = polarity, color = source)) + 
   geom_point() +
   geom_path() +
   geom_hline(yintercept = 0, color = "gold3") +
-  labs(x = "Week", y = "Percent") + 
+  geom_vline(xintercept = 12, color = "coral2") +
+  labs(x = "Week", y = "Sentiment Score") + 
   scale_x_continuous(  # This handles replacement of row 
-    breaks = bing_chart_all$week, # notice need to reuse data frame
-    labels = bing_chart_all$week) +
-  scale_y_continuous(limits = c(-80, 20), n.breaks = 10) +
+    breaks = afinn_chart_all$week, # notice need to reuse data frame
+    labels = afinn_chart_all$week) +
+  scale_y_continuous(n.breaks = 10) +
   scale_colour_manual(values = c("#33A02B", "#E3211C", "#1F78B4")) +
   theme(panel.grid = element_blank(),
         panel.background = NULL,
@@ -1851,12 +1886,74 @@ bing_chart_all %>%
 
 ```
 
-Overall, the opinion towards COVID-19 of all three sources remained negative throughout the period. There was a similar pattern between news articles and Twitter, as the sentiment scores were significantly low in week 3 but showed an upward trend in the subsequent weeks and wavered at around -20 from week 12 to week 16. For Reddit, the sentiment of comments did not have much changes, as it fluctuated at around -30 and -20.
+Overall, the opinion towards COVID-19 of all three sources remained negative throughout the period. Reddit was the most negative source, while news was a bit more positive than Twitter. There was a similar pattern between news articles and Twitter, as the sentiment scores were highly negative in week 3 but showed a positive trend in the subsequent weeks. At week 12 when the situation got worse in the US, the sentiment score of news articles went down then picked up again at week 15, whereas Twitter showed a consistent sentiment. For Reddit, the sentiment of comments did not have much changes, as it wavered at around -30.
 
+### Compare different categorical sentiment - NRC
+
+Applying NRC lexicon to inspect the data in different categorical sentiments, we presented the result in a radar chart
+
+```{r}
+nrc <- get_sentiments("nrc") %>% 
+  filter(!sentiment %in%  c("positive", "negative"))
+
+# News join and calculate score
+News_nrc <- News_df %>% 
+  inner_join(nrc) %>% 
+  separate(doc, into = c("week", "no"), sep = "\\.") %>% 
+  group_by(week, sentiment) %>% 
+  summarise(count = sum(freq))
+News_nrc_sum <- News_nrc %>% 
+  group_by(sentiment) %>% 
+  summarise(total_count = sum(count)) %>% 
+  ungroup()
+News_nrc_sum <- News_nrc_sum %>% 
+  mutate(percent = total_count/ sum(News_nrc_sum$total_count),
+         source = "News")
+
+# Reddit join and calculate score
+Reddit_nrc <- Reddit_df %>% 
+  inner_join(nrc) %>% 
+  separate(doc, into = c("week", "no"), sep = "\\.") %>% 
+  group_by(week, sentiment) %>% 
+  summarise(count = sum(freq))
+Reddit_nrc_sum <- Reddit_nrc %>% 
+  group_by(sentiment) %>% 
+  summarise(total_count = sum(count)) %>% 
+  ungroup()
+Reddit_nrc_sum <- Reddit_nrc_sum %>% 
+  mutate(percent = total_count/ sum(Reddit_nrc_sum$total_count),
+         source = "Reddit")
+
+# Twitter join and calculate score
+Twitter_nrc <- Twitter_df %>% 
+  inner_join(nrc) %>% 
+  separate(doc, into = c("week", "no"), sep = "\\.") %>% 
+  group_by(week, sentiment) %>% 
+  summarise(count = sum(freq))
+Twitter_nrc_sum <- Twitter_nrc %>% 
+  group_by(sentiment) %>% 
+  summarise(total_count = sum(count)) %>% 
+  ungroup()
+Twitter_nrc_sum <- Twitter_nrc_sum %>% 
+  mutate(percent = total_count/ sum(Twitter_nrc_sum$total_count),
+         source = "Twitter")
+
+# Combine data and plot radar chart
+nrc_chart_all <- rbind(Reddit_nrc_sum, News_nrc_sum, Twitter_nrc_sum)
+nrc_chart_all %>% 
+  select(-total_count) %>% 
+  pivot_wider(names_from = source, values_from = percent) %>% 
+  chartJSRadar(width = 8,
+               height = 5,
+               showToolTipLabel = FALSE,
+               labelSize = 20)
+```
+
+In consideration of all data available, news articles showed the most positivity by coming on top of 2 categories “joy” and “trust”, but it also had the most “anger” words. Reddit were dominant in most negative categories, such as “sadness”, “fear” and “anticipation”. Most of Twitter’s posts just expressed “surprise” in their own terms. This turned out to be a relevant interpretation of the outcome of the AFINN lexicon analysis above. 
 
 ### Topic-based sentiment scores
 
-Using STM model with the same number of topics of 25 for all three sources, we calculated the sentiment score of each topic. Again, the general opinions in most topics were negative. For further analysis, we ignored the topics that only had emotional words but did not contain any interpretable topics (e.g. Topic 21 of Twitter with high probability words like "dumb", "stupid", "kid", "hate").
+Using STM model with the same number of topics of 25 for all three sources, we calculated the sentiment score of each topic. Again, the general opinions in most topics were negative. The sentiments were more significant in Reddit and Twitter, while in news articles most topics had the scores closer to neutral.
 
 ```{r}
 # News
@@ -1866,7 +1963,7 @@ News_topic_sc_plot <- News_topic_sc %>%
   geom_col(fill = "#33A02B") +
   geom_hline(yintercept = 0, color = "gold3") +
   labs(x = NULL, y = NULL, subtitle = "News") + 
-  scale_y_continuous(limits = c(-0.3, 0.2), n.breaks = 6) +
+  scale_y_continuous(limits = c(-1, 0.2), n.breaks = 8) +
   theme(panel.grid = element_blank(),
         panel.background = NULL,
         axis.title = element_text(size = 16),
@@ -1880,7 +1977,7 @@ Reddit_topic_sc_plot <- Reddit_topic_sc %>%
   geom_col(fill = "#E3211C") +
   geom_hline(yintercept = 0, color = "gold3") +
   labs(x = NULL, y = NULL, subtitle = "Reddit") + 
-  scale_y_continuous(limits = c(-0.3, 0.2), n.breaks = 6) +
+  scale_y_continuous(limits = c(-1, 0.2), n.breaks = 8) +
   theme(panel.grid = element_blank(),
         panel.background = NULL,
         axis.title = element_text(size = 16),
@@ -1894,7 +1991,7 @@ Twitter_topic_sc_plot <- Twitter_topic_sc %>%
   geom_col(fill = "#1F78B4") +
   geom_hline(yintercept = 0, color = "gold3") +
   labs(x = "Topic", y = NULL, subtitle = "Twitter") + 
-  scale_y_continuous(limits = c(-0.3, 0.2), n.breaks = 6) +
+  scale_y_continuous(limits = c(-1, 0.2), n.breaks = 8) +
   theme(panel.grid = element_blank(),
         panel.background = NULL,
         axis.title = element_text(size = 16),
@@ -1904,6 +2001,9 @@ Twitter_topic_sc_plot <- Twitter_topic_sc %>%
 grid.arrange(News_topic_sc_plot, Reddit_topic_sc_plot, Twitter_topic_sc_plot)
 ```
 
-Reddit had some extremely negative sentiments, which showed that people were significantly worried about the fatality and the spread of the virus (Topic 4 of Reddit) and about the clinical symptoms of patients with COVID-19 (Topic 22). At the same time, news and Twitter had a few notable though not extreme negativity, with topic 22 and 23 in news and topic 6 and 11 in Twitter, whereas the other topics in these two sources were close to neutral. Twitter users appeared to have the same concerns as Reddit users, while the news media gravitated towards blaming politician and worry on social security. The difference in sentiment scores also indicates that Reddit comments convey more emotional expression than news articles and Twitter posts do.
+We noticed some extremely negative topics in social medias. Taking a closer look, these are the topics that mostly consist of sentimental words, as in Topic 17 of Reddit (yeah, lol, holy, jesus…) and Topic 9 of Twitter (hell, yall, man, holy…). This was one downside of unsupervised topic modelling, as it grouped these sentimental words together in one topic, but the interpretation was not useful for topic discovery. Excluding the topics above, Reddit had the most negative sentiments, as in Topic 11 (virus, disease, wuhan, china…), Topic 22 (nba, drop, play, season…) and Topic 4 (case, confirm, county, state…), which showed that Reddit users were worried about the role of China in the pandemic, the rising number of confirmed cases in the states and surprisingly, the cancellation of NBA season. At the same time, news and Twitter had a few notable negativities, with topic 22 (political, pence, tweet, blame, party, attack…) and 23 (police, prison, court, law, jail…) in news and topic 2 (trump, lie, hoax, administration…) and 13 (die, flu, trump, li, whistleblower…) in Twitter. Twitter users seemed to have the concerns centered around President Trump’s behaviors, while the news media gravitated towards the conflict of political parties and worries about social security.
+
+Among the positive topics, there was a homogeneous them in all sources. Topic 13 in the news (love, church, moment, wife, mother…), Topic 9 in Reddit (live, family, hope, friend, mom…) and Topic 14 in Twitter (family, friend, pray, thought, recovery…) had the same theme of faith and belief, though the positive scores were mild.
+
 
 
