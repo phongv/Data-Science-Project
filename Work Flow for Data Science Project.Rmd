@@ -25,15 +25,6 @@ library(tm)
 
 ```
 
-# Data Collection
-
-Using the keyword "coronavirus" for querying, we collected news articles published on news websites in the United States from the beginning of 2020, where the first cases of coronavirus were reported, until April 19, 2020. We used a third-party API called Currents API which generated data in JSON format. For sources, we looked at the top 15 U.S news websites measured by unique monthly visitors (Statista, 2020), excluding the news aggregators (Yahoo News, Google News) and topic-specific newspapers (The Wall Street Journal). The free version of the API, despite returning some useful features including Title, Date, Description and URL, did not allow us getting the full text of the articles. Therefore, we found a resolution by putting all the URLs available from the previous step into the newspaper3k module in Python, which enabled scraping the necessary text. Furthermore, after checking the data quality from each source, we narrowed them down to these 6 news outlets: CNN, The New York Times, Fox News, The Guardian, USA Today and The LA Times.
-
-For Reddit data, we searched for all comments from the subreddit CoronavirusUS from February when it was created until April 19, 2020. We used the pushshift.io Reddit API to build the URL with the relevant parameters which returned a page of JSON objects.
-
-In view of Twitter data, the standard API only allows search queries of up to 7 days which means that we cannot scrape data in the normal way for more historical data. However, thanks to the support from the team at crowdbreaks.org, who is tracking Twitter trend on COVID-19 in real time, we managed to get all tweet IDs that they had collected since January in the U.S. By creating a Python environment and executing the download command following their guidelines, we retrieved the tweets from the provided IDs, also in JSON format.
-
-We used both the jsonlite package in R and the json module in Python to extract key features from each JSON result, namely the date and text attributes. Unfortunately, because of Twitter's restriction allowing only 180 tweets every 15 minutes, we calculated a total download time of 15 days using 2 API keys we had. On that account, we decided to split the data in half by stratified sampling, keeping the distribution of number of tweets per week, in order to speed up data collection and obtain the data in time for the report. The Twitter data were collected until April 16, 2020.
 
 # Flow 1 - Load + Clean data
 
@@ -95,7 +86,7 @@ news_data <- news_data %>%
 
 ## Data Distribution
 
-For data cleaning, we removed duplicated data, texts that were too short and kept only texts written in English. Consequently, 14,149 news articles, 352,842 Reddit comments and 109,329 tweets were ready for analysis. The data distribution can be seen in Figure 1. The number of news reported on COVID-19 in the U.S were relatively low in the first 6 weeks (week 3 - week 8), and the subreddit CoronavirusUS was not even created until week 7. However, there was a dramatic increase starting from week 9 and peaked in week 11, 12 and 13 for Twitter, Reddit and News respectively. This was the end of March when the number of infected cases in the country surged.
+The data distribution can be seen in Figure 1. The number of news reported on COVID-19 in the U.S were relatively low in the first 6 weeks (week 3 - week 8), and the subreddit CoronavirusUS was not even created until week 7. However, there was a dramatic increase starting from week 9 and peaked in week 11, 12 and 13 for Twitter, Reddit and News respectively. This was the end of March when the number of infected cases in the country surged.
 
 ```{r Data Count, echo=FALSE}
 
@@ -1697,9 +1688,7 @@ sum(bing$sentiment == "positive")
 
 # Flow 5 - Topic Model Sentiments
 
-To investigate sentiments in news articles, reddit comments and tweets, we used tokens extracted from the documents. We calculated sentiment scores with the AFINN lexicon developed by Finn Årup Nielsen, which is included in the tidytext package. The AFINN lexicon is a list of English terms manually rated for valence with an integer between -5 (negative) and +5 (positive). It comprises 878 positive terms and 1,598 negative terms.
-
-We calculated the sentiment score as the percentage of the difference between the absolute sum of positive terms and negative terms operating on the total sum of them
+To investigate sentiments in news articles, reddit comments and tweets, we used tokens extracted from the documents. We calculated sentiment scores with the AFINN lexicon developed by Finn Årup Nielsen, which is included in the tidytext package. The AFINN lexicon is a list of English terms manually rated for valence with an integer between -5 (negative) and +5 (positive). It comprises 878 positive terms and 1,598 negative terms. The sentiment score is the percentage of the difference between the absolute sum of positive terms and negative terms divided by the total sum of them.
 
 With the purpose of examining from several perspectives, we also made use of the NRC lexicon from Saif Mohammad and Peter Turney. The NRC lexicon categorizes words in a binary fashion (“yes”/ “no”) into categories of positive, negative, anger, anticipation, disgust, fear, joy, sadness, surprise, and trust. We filtered out the positive and negative categories which left us with 4,463 distinct words in the lexicon (Note: one word can be in multiple sentiment categories). We counted the number of words in each category and computed their percentage distribution in each of our sources.
 
